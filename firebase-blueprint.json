@@ -1,0 +1,123 @@
+{
+  "entities": {
+    "Cliente": {
+      "title": "Cliente",
+      "description": "Cadastro de cliente contratante de locação de espaço",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID exclusivo" },
+        "nome": { "type": "string", "description": "Nome completo do cliente" },
+        "cpf": { "type": "string", "description": "Cpf do cliente" },
+        "rg": { "type": "string", "description": "Registro geral" },
+        "telefone": { "type": "string", "description": "Número de contato" },
+        "whatsapp": { "type": "string", "description": "Mensageiro instantâneo" },
+        "email": { "type": "string", "format": "email", "description": "Email principal" },
+        "endereco": { "type": "string", "description": "Endereço completo" },
+        "observacoes": { "type": "string", "description": "Notas e preferências extras" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Data de integração" }
+      },
+      "required": ["id", "nome", "cpf", "telefone", "email"]
+    },
+    "Espaco": {
+      "title": "Espaco",
+      "description": "Salão de festas ou espaço físico disponível para locação",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Identificador exclusivo" },
+        "nome": { "type": "string", "description": "Nome comercial do espaço" },
+        "capacidade": { "type": "integer", "description": "Quantidade máxima de convidados suportada" },
+        "valorLocacao": { "type": "number", "description": "Preço padrão de locação diária" },
+        "descricao": { "type": "string", "description": "Detalhamento e infraestrutura livre" },
+        "fotos": { "type": "array", "description": "Lista de imagens de visualização" },
+        "status": { "type": "string", "enum": ["Ativo", "Inativo"], "description": "Status operacional do espaço" }
+      },
+      "required": ["id", "nome", "capacidade", "valorLocacao", "descricao", "status"]
+    },
+    "Reserva": {
+      "title": "Reserva",
+      "description": "Reserva ou locação agendada de um espaço de eventos",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID da reserva" },
+        "clienteId": { "type": "string", "description": "ID do cliente vinculado" },
+        "espacoId": { "type": "string", "description": "ID do espaço alugado" },
+        "tipoEvento": { "type": "string", "description": "Tipo de celebração, ex: Casamento, Formatura" },
+        "dataEvento": { "type": "string", "format": "date", "description": "Data do evento" },
+        "horario": { "type": "string", "description": "Faixa de horário contratada" },
+        "qtdConvidados": { "type": "integer", "description": "Estimativa de convidados" },
+        "valorTotal": { "type": "number", "description": "Valor global cobrado" },
+        "valorSinal": { "type": "number", "description": "Valor exigido como sinal de aprovação" },
+        "status": { "type": "string", "enum": ["Orçamento", "Aguardando sinal", "Confirmado", "Realizado", "Cancelado"], "description": "Status contratual" },
+        "observacoes": { "type": "string", "description": "Instruções operacionais e logísticas" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Data de registro" }
+      },
+      "required": ["id", "clienteId", "espacoId", "tipoEvento", "dataEvento", "horario", "qtdConvidados", "valorTotal", "valorSinal", "status"]
+    },
+    "Pagamento": {
+      "title": "Pagamento",
+      "description": "Registro financeiro de entrada ou saída referente a uma locação",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID do recebimento" },
+        "reservaId": { "type": "string", "description": "ID da reserva de eventos" },
+        "valor": { "type": "number", "description": "Quantia financeira movimentada" },
+        "formaPagamento": { "type": "string", "enum": ["PIX", "Cartão", "Dinheiro", "Transferência"], "description": "Modalidade aplicada" },
+        "status": { "type": "string", "enum": ["Pendente", "Confirmado", "Cancelado"], "description": "Estado financeiro" },
+        "dataPagamento": { "type": "string", "format": "date-time", "description": "Data da quitação" }
+      },
+      "required": ["id", "reservaId", "valor", "formaPagamento", "status"]
+    },
+    "Contrato": {
+      "title": "Contrato",
+      "description": "Documento de contrato gerado para a reserva comercial",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID do contrato" },
+        "reservaId": { "type": "string", "description": "Reserva vinculada" },
+        "pdfUrl": { "type": "string", "description": "URL para o documento gerado" },
+        "conteudoCustomizado": { "type": "string", "description": "Texto editores de termos do contrato" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Criação" }
+      },
+      "required": ["id", "reservaId", "createdAt"]
+    },
+    "ActivityLog": {
+      "title": "ActivityLog",
+      "description": "Log de atividades do administrador no ERP",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID do log" },
+        "usuario": { "type": "string", "description": "Responsável pela ação" },
+        "acao": { "type": "string", "description": "Resumo da ação" },
+        "detalhes": { "type": "string", "description": "Informações completas do evento" },
+        "timestamp": { "type": "string", "format": "date-time", "description": "Data exata da operação" }
+      },
+      "required": ["id", "usuario", "acao", "timestamp"]
+    }
+  },
+  "firestore": {
+    "clientes": {
+      "schema": "Cliente",
+      "description": "Coleção de Clientes cadastrados no ERP"
+    },
+    "espacos": {
+      "schema": "Espaco",
+      "description": "Coleção de Espaços e Salões operados pela empresa"
+    },
+    "reservas": {
+      "schema": "Reserva",
+      "description": "Reservas e aluguéis agendados"
+    },
+    "pagamentos": {
+      "schema": "Pagamento",
+      "description": "Lançamentos financeiros de contas a pagar e receber"
+    },
+    "contratos": {
+      "schema": "Contrato",
+      "description": "Termos de compromisso de locação"
+    },
+    "logs": {
+      "schema": "ActivityLog",
+      "description": "Registros de trilha de auditoria administrativa"
+    }
+  }
+}

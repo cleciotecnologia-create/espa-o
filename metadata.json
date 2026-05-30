@@ -1,0 +1,8 @@
+{
+  "name": "EventSpace ERP",
+  "description": "Sistema ERP completo para gerenciamento de espaços de eventos e salões de festas.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
