@@ -6,7 +6,12 @@
 import React, { useState, useEffect } from 'react';
 import { getEspacos, saveEspaco, deleteEspaco } from '../services/db';
 import { Espaco } from '../types';
-import { Plus, Edit, Trash, Image, Check, X, AlertTriangle, Eye, Upload } from 'lucide-react';
+import { Plus, Edit, Trash, Image, Check, X, AlertTriangle, Eye, Upload, FileText } from 'lucide-react';
+
+const isPdfFile = (src?: string) => {
+  if (!src) return false;
+  return src.startsWith('data:application/pdf') || src.toLowerCase().endsWith('.pdf') || src.includes('application/pdf');
+};
 
 export default function SpacesView() {
   const [spaces, setSpaces] = useState<Espaco[]>([]);
@@ -18,6 +23,9 @@ export default function SpacesView() {
   const [nome, setNome] = useState('');
   const [capacidade, setCapacidade] = useState(200);
   const [valorLocacao, setValorLocacao] = useState(3000);
+  const [taxaLimpeza, setTaxaLimpeza] = useState(250);
+  const [taxaCancelamento, setTaxaCancelamento] = useState(10);
+  const [porcentagemSinal, setPorcentagemSinal] = useState(50);
   const [descricao, setDescricao] = useState('');
   const [status, setStatus] = useState<'Ativo' | 'Inativo'>('Ativo');
   const [fotos, setFotos] = useState<string[]>([]);
@@ -44,6 +52,9 @@ export default function SpacesView() {
     setNome('');
     setCapacidade(200);
     setValorLocacao(3000);
+    setTaxaLimpeza(250);
+    setTaxaCancelamento(10);
+    setPorcentagemSinal(50);
     setDescricao('');
     setStatus('Ativo');
     setFotos([]);
@@ -55,6 +66,9 @@ export default function SpacesView() {
     setNome(sp.nome);
     setCapacidade(sp.capacidade);
     setValorLocacao(sp.valorLocacao);
+    setTaxaLimpeza(sp.taxaLimpeza !== undefined ? sp.taxaLimpeza : 250);
+    setTaxaCancelamento(sp.taxaCancelamento !== undefined ? sp.taxaCancelamento : 10);
+    setPorcentagemSinal(sp.porcentagemSinal !== undefined ? sp.porcentagemSinal : 50);
     setDescricao(sp.descricao);
     setStatus(sp.status);
     setFotos(sp.fotos || []);
@@ -65,13 +79,15 @@ export default function SpacesView() {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    setUploadProgress("Enviando foto...");
     const file = files[0];
+    const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+    setUploadProgress(isPdf ? "Enviando arquivo PDF..." : "Enviando foto...");
+
     const reader = new FileReader();
     reader.onloadend = () => {
       const resultString = reader.result as string;
       setFotos(prev => [...prev, resultString]);
-      setUploadProgress("Foto carregada com sucesso!");
+      setUploadProgress(isPdf ? "PDF carregado com sucesso!" : "Foto carregada com sucesso!");
       setTimeout(() => setUploadProgress(null), 2000);
     };
     reader.onerror = () => {
@@ -95,6 +111,9 @@ export default function SpacesView() {
       nome,
       capacidade: Number(capacidade),
       valorLocacao: Number(valorLocacao),
+      taxaLimpeza: Number(taxaLimpeza),
+      taxaCancelamento: Number(taxaCancelamento),
+      porcentagemSinal: Number(porcentagemSinal),
       descricao,
       status,
       fotos: finalFotos
@@ -175,15 +194,32 @@ export default function SpacesView() {
               
               {/* Media banner */}
               <div className="h-48 bg-slate-100 dark:bg-slate-950 relative overflow-hidden group">
-                <img 
-                  src={sp.fotos?.[0] || "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&q=80&w=800"} 
-                  alt={sp.nome} 
-                  referrerPolicy="no-referrer"
-                  className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                />
+                {isPdfFile(sp.fotos?.[0]) ? (
+                  <div className="w-full h-full flex flex-col items-center justify-center bg-rose-55 pt-3 dark:bg-rose-950/20 text-rose-600 dark:text-rose-450 p-4 select-none">
+                    <FileText className="w-12 h-12 mb-1" />
+                    <span className="text-xs font-bold uppercase tracking-wider">Apresentação PDF</span>
+                    <span className="text-[10px] text-gray-400 mt-1">Clique para abrir documento</span>
+                  </div>
+                ) : (
+                  <img 
+                    src={sp.fotos?.[0] || "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&q=80&w=800"} 
+                    alt={sp.nome} 
+                    referrerPolicy="no-referrer"
+                    className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                  />
+                )}
+
+                {sp.fotos?.[0] && (
+                  <div 
+                    onClick={() => window.open(sp.fotos[0], '_blank')} 
+                    className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-all flex items-center justify-center cursor-pointer z-10"
+                  >
+                    <Eye className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-all" />
+                  </div>
+                )}
                 
                 {/* Active/Inactive state badge */}
-                <div className="absolute top-3 left-3">
+                <div className="absolute top-3 left-3 z-20">
                   <span className={`px-2.5 py-1 text-[10px] font-bold rounded-lg uppercase tracking-wider ${
                     sp.status === 'Ativo' 
                       ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20' 
@@ -194,8 +230,9 @@ export default function SpacesView() {
                 </div>
                 
                 {/* Price Label */}
-                <div className="absolute bottom-3 right-3 bg-slate-900/80 backdrop-blur-sm text-white px-2.5 py-1 rounded-md text-xs font-mono font-bold border border-white/10">
-                  R$ {sp.valorLocacao.toLocaleString('pt-BR')}/dia
+                <div className="absolute bottom-3 right-3 bg-slate-900/80 backdrop-blur-sm text-white px-2.5 py-1.5 rounded-md text-right border border-white/10 flex flex-col items-end">
+                  <span className="text-xs font-mono font-bold leading-none">R$ {sp.valorLocacao.toLocaleString('pt-BR')}/dia</span>
+                  <span className="text-[10px] text-emerald-350 leading-none mt-1 font-mono">Limpeza: R$ {(sp.taxaLimpeza !== undefined ? sp.taxaLimpeza : 250).toLocaleString('pt-BR')}</span>
                 </div>
               </div>
 
@@ -203,8 +240,11 @@ export default function SpacesView() {
               <div className="p-5 flex-1 flex flex-col justify-between">
                 <div>
                   <h3 className="text-md font-bold text-gray-900 dark:text-white truncate">{sp.nome}</h3>
-                  <div className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold mt-1 font-mono">
-                    Capacidade Máxima: {sp.capacidade} Convidados
+                  <div className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold mt-1 font-mono flex flex-wrap justify-between gap-1">
+                    <span>Capacidade: {sp.capacidade} Convds</span>
+                    <span className="text-emerald-600 dark:text-emerald-450">Limpeza: R$ {(sp.taxaLimpeza !== undefined ? sp.taxaLimpeza : 250).toLocaleString('pt-BR')}</span>
+                    <span className="text-rose-600 dark:text-rose-400">Multa Canc: {sp.taxaCancelamento !== undefined ? sp.taxaCancelamento : 10}%</span>
+                    <span className="text-blue-600 dark:text-blue-400">Sinal Padrão: {sp.porcentagemSinal !== undefined ? sp.porcentagemSinal : 50}%</span>
                   </div>
                   <p className="text-xs text-gray-500 dark:text-zinc-400 mt-2 line-clamp-3 leading-relaxed text-slate-600">
                     {sp.descricao}
@@ -272,9 +312,9 @@ export default function SpacesView() {
               </div>
 
               {/* Group */}
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Capacidade (Pessoas) *</label>
+                  <label className="block text-[10px] font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Capacidade *</label>
                   <input
                     type="number"
                     required
@@ -282,18 +322,53 @@ export default function SpacesView() {
                     max="10000"
                     value={capacidade}
                     onChange={(e) => setCapacidade(Number(e.target.value))}
-                    className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-gray-350 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-gray-350 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Valor de Locação (R$/dia) *</label>
+                  <label className="block text-[10px] font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Locação *</label>
                   <input
                     type="number"
                     required
                     min="1"
                     value={valorLocacao}
                     onChange={(e) => setValorLocacao(Number(e.target.value))}
-                    className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-gray-350 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-gray-350 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Limpeza *</label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    value={taxaLimpeza}
+                    onChange={(e) => setTaxaLimpeza(Number(e.target.value))}
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-gray-350 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Multa Canc. % *</label>
+                  <input
+                    type="number"
+                    required
+                    min="0"
+                    max="100"
+                    value={taxaCancelamento}
+                    onChange={(e) => setTaxaCancelamento(Number(e.target.value))}
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-gray-350 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div className="col-span-2 md:col-span-1">
+                  <label className="block text-[10px] font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Sinal Padrão % *</label>
+                  <input
+                    type="number"
+                    required
+                    min="1"
+                    max="100"
+                    value={porcentagemSinal}
+                    onChange={(e) => setPorcentagemSinal(Number(e.target.value))}
+                    className="w-full px-3 py-2 text-xs rounded-lg border border-gray-350 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   />
                 </div>
               </div>
@@ -332,7 +407,7 @@ export default function SpacesView() {
                 <input 
                   type="file" 
                   id="space-file-input" 
-                  accept="image/*" 
+                  accept="image/*,application/pdf" 
                   className="hidden" 
                   onChange={handleFileUpload}
                 />
@@ -342,8 +417,8 @@ export default function SpacesView() {
                   className="border-2 border-dashed border-gray-300 dark:border-slate-700 rounded-xl p-4 text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all flex flex-col justify-center items-center"
                 >
                   <Upload className="w-6 h-6 text-indigo-500 mb-2 cursor-pointer" />
-                  <span className="text-xs font-bold text-gray-800 dark:text-zinc-200">Clique para enviar uma foto comercial</span>
-                  <span className="text-[10px] text-gray-400 mt-1">Formato PNG, JPG de até 5MB</span>
+                  <span className="text-xs font-bold text-gray-800 dark:text-zinc-200">Clique para enviar foto ou PDF comercial</span>
+                  <span className="text-[10px] text-gray-400 mt-1">Formato PNG, JPG ou PDF de até 10MB</span>
                 </div>
 
                 {uploadProgress && (
@@ -354,12 +429,22 @@ export default function SpacesView() {
                 {fotos.length > 0 && (
                   <div className="grid grid-cols-4 gap-2 mt-3 p-2 bg-gray-50 dark:bg-slate-850 rounded-lg">
                     {fotos.map((src, index) => (
-                      <div key={index} className="h-14 rounded-md overflow-hidden relative border border-gray-300">
-                        <img src={src} alt="Uploaded" className="w-full h-full object-cover" />
+                      <div key={index} className="h-14 rounded-md overflow-hidden relative border border-gray-300 bg-white dark:bg-slate-900 flex items-center justify-center cursor-pointer group/thumb">
+                        {isPdfFile(src) ? (
+                          <div onClick={() => window.open(src, '_blank')} className="w-full h-full flex flex-col items-center justify-center text-rose-600 bg-rose-50 dark:bg-rose-950/20 px-1">
+                            <FileText className="w-5 h-5 mb-0.5" />
+                            <span className="text-[8px] font-bold uppercase truncate max-w-full">PDF Doc</span>
+                          </div>
+                        ) : (
+                          <img onClick={() => window.open(src, '_blank')} src={src} alt="Uploaded" className="w-full h-full object-cover hover:scale-105 transition-transform" />
+                        )}
                         <button
                           type="button"
-                          onClick={() => setFotos(prev => prev.filter((_, i) => i !== index))}
-                          className="absolute -top-1 -right-1 bg-red-650 text-white rounded-full p-0.5 text-xs font-bold flex items-center justify-center w-4 h-4 shadow shadow-black hover:scale-110"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setFotos(prev => prev.filter((_, i) => i !== index));
+                          }}
+                          className="absolute -top-1 -right-1 bg-red-650 text-white rounded-full p-0.5 text-[10px] font-bold flex items-center justify-center w-4 h-4 shadow shadow-black hover:scale-110 z-20"
                         >
                           ×
                         </button>

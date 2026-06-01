@@ -59,18 +59,6 @@ export default function NotificationsView() {
   // Settings state
   const [configs, setConfigs] = useState<NotifConfigs>(getNotifConfigs());
   const [saveSuccess, setSaveSuccess] = useState(false);
-  const [saveAttempted, setSaveAttempted] = useState(false);
-
-  // SMTP validation helper computations
-  const smtpPortStr = configs.smtpPort || '';
-  const isSmtpPortValid = smtpPortStr ? (/^\d+$/.test(smtpPortStr) && parseInt(smtpPortStr, 10) > 0 && parseInt(smtpPortStr, 10) <= 65535) : false;
-
-  const smtpSenderEmailStr = configs.smtpSenderEmail || '';
-  const isSmtpSenderEmailValid = smtpSenderEmailStr ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(smtpSenderEmailStr) : false;
-
-  const smtpUserStr = configs.smtpUser || '';
-  const isSmtpUserEmail = smtpUserStr.includes('@');
-  const isSmtpUserEmailValid = isSmtpUserEmail ? /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(smtpUserStr) : true;
 
   // Manual trigger state
   const [selectedClient, setSelectedClient] = useState<string>('');
@@ -123,7 +111,6 @@ export default function NotificationsView() {
 
   const handleSaveConfigs = (e: React.FormEvent) => {
     e.preventDefault();
-    setSaveAttempted(true);
     saveNotifConfigs(configs);
     setSaveSuccess(true);
     setTimeout(() => setSaveSuccess(false), 3000);
@@ -798,119 +785,51 @@ export default function NotificationsView() {
 
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4 font-sans">
                     <div className="md:col-span-2">
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Host do SMTP *</label>
-                        {saveAttempted && !configs.smtpHost && (
-                          <span className="text-[10px] text-rose-500 font-semibold font-sans">Obrigatório</span>
-                        )}
-                      </div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Host do SMTP *</label>
                       <input
                         type="text"
                         required
                         placeholder="smtp.zoho.com ou smtp.gmail.com"
                         value={configs.smtpHost || ''}
                         onChange={(e) => setConfigs({ ...configs, smtpHost: e.target.value })}
-                        className={`w-full px-3 py-2.5 rounded-lg border bg-white dark:bg-slate-950 text-slate-950 dark:text-white text-xs outline-none font-mono transition-colors ${
-                          saveAttempted && !configs.smtpHost
-                            ? 'border-rose-450 dark:border-rose-800'
-                            : 'border-slate-200 dark:border-slate-800 focus:border-indigo-500'
-                        }`}
+                        className="w-full px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-950 dark:text-white text-xs outline-none focus:border-indigo-500 font-mono"
                       />
                     </div>
                     <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">Porta SMTP *</label>
-                        {smtpPortStr && (
-                          isSmtpPortValid ? (
-                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold font-sans">✓ Válida</span>
-                          ) : (
-                            <span className="text-[10px] text-rose-500 font-bold font-sans">⚠️ Inválida</span>
-                          )
-                        )}
-                      </div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">Porta SMTP *</label>
                       <input
                         type="text"
                         required
                         placeholder="587"
                         value={configs.smtpPort || ''}
                         onChange={(e) => setConfigs({ ...configs, smtpPort: e.target.value })}
-                        className={`w-full px-3 py-2.5 rounded-lg border text-slate-950 dark:text-white text-xs outline-none font-mono transition-all duration-200 ${
-                          smtpPortStr 
-                            ? (isSmtpPortValid 
-                                ? 'border-emerald-500 dark:border-emerald-750 bg-emerald-50/10 dark:bg-emerald-950/10 focus:border-emerald-500' 
-                                : 'border-rose-500 dark:border-rose-800 bg-rose-50/10 dark:bg-rose-950/10 focus:border-rose-500'
-                              ) 
-                            : (saveAttempted 
-                                ? 'border-rose-450 dark:border-rose-800' 
-                                : 'border-slate-200 dark:border-slate-800 focus:border-indigo-500'
-                              )
-                        }`}
+                        className="w-full px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-950 dark:text-white text-xs outline-none focus:border-indigo-500 font-mono"
                       />
-                      {smtpPortStr && !isSmtpPortValid && (
-                        <p className="text-[9px] text-rose-500 mt-1 leading-tight font-sans font-bold">Portas suportadas: números de 1 a 65535.</p>
-                      )}
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider font-sans">Usuário SMTP *</label>
-                        {smtpUserStr && isSmtpUserEmail && !isSmtpUserEmailValid && (
-                          <span className="text-[10px] text-rose-500 font-semibold font-sans">⚠️ Email inválido</span>
-                        )}
-                      </div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 font-sans">Usuário SMTP *</label>
                       <input
                         type="text"
                         required
                         placeholder="contato@eventspace.com.br"
                         value={configs.smtpUser || ''}
                         onChange={(e) => setConfigs({ ...configs, smtpUser: e.target.value })}
-                        className={`w-full px-3 py-2.5 rounded-lg border bg-white dark:bg-slate-950 text-slate-950 dark:text-white font-mono text-xs outline-none transition-colors ${
-                          smtpUserStr && isSmtpUserEmail && !isSmtpUserEmailValid
-                            ? 'border-rose-500 dark:border-rose-800 bg-rose-50/10'
-                            : (saveAttempted && !configs.smtpUser
-                                ? 'border-rose-450 dark:border-rose-800'
-                                : 'border-slate-200 dark:border-slate-800 focus:border-indigo-500'
-                              )
-                        }`}
+                        className="w-full px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-950 dark:text-white font-mono text-xs outline-none"
                       />
                     </div>
                     <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider font-sans">Senha SMTP *</label>
-                        {saveAttempted && !configs.smtpPass && (
-                          <span className="text-[10px] text-amber-500 dark:text-amber-400 font-black flex items-center gap-0.5 animate-pulse font-sans">
-                            <AlertTriangle className="w-3 h-3 text-amber-500" />
-                            Aviso: Senha vazia!
-                          </span>
-                        )}
-                      </div>
-                      <div className="relative">
-                        <input
-                          type="password"
-                          required
-                          placeholder="••••••••••••••••••••••••"
-                          value={configs.smtpPass || ''}
-                          onChange={(e) => setConfigs({ ...configs, smtpPass: e.target.value })}
-                          className={`w-full py-2.5 rounded-lg border bg-white dark:bg-slate-950 text-slate-950 dark:text-white font-mono text-xs outline-none transition-colors ${
-                            saveAttempted && !configs.smtpPass
-                              ? 'border-amber-500 dark:border-amber-800 bg-amber-50/5 dark:bg-amber-950/5 pl-3 pr-10'
-                              : 'px-3 border-slate-200 dark:border-slate-800 focus:border-indigo-500'
-                          }`}
-                        />
-                        {saveAttempted && !configs.smtpPass && (
-                          <div className="absolute inset-y-0 right-3 flex items-center pointer-events-none">
-                            <AlertTriangle className="w-4 h-4 text-amber-500 animate-bounce" title="A senha está vazia!" />
-                          </div>
-                        )}
-                      </div>
-                      {saveAttempted && !configs.smtpPass && (
-                        <p className="text-[9px] text-amber-600 dark:text-amber-450 mt-1 font-bold leading-tight font-sans flex items-center gap-1">
-                          <AlertTriangle className="w-3.5 h-3.5" />
-                          <span>Instável: Deixar a senha vazia causará erros na validação e entrega.</span>
-                        </p>
-                      )}
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5 font-sans">Senha SMTP *</label>
+                      <input
+                        type="password"
+                        required
+                        placeholder="••••••••••••••••••••••••"
+                        value={configs.smtpPass || ''}
+                        onChange={(e) => setConfigs({ ...configs, smtpPass: e.target.value })}
+                        className="w-full px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-950 dark:text-white font-mono text-xs outline-none"
+                      />
                     </div>
                   </div>
 
@@ -923,41 +842,18 @@ export default function NotificationsView() {
                         placeholder="EventSpace Geral"
                         value={configs.smtpSenderName || ''}
                         onChange={(e) => setConfigs({ ...configs, smtpSenderName: e.target.value })}
-                        className={`w-full px-3 py-2.5 rounded-lg border bg-white dark:bg-slate-950 text-slate-950 dark:text-white text-xs outline-none transition-colors ${
-                          saveAttempted && !configs.smtpSenderName
-                            ? 'border-rose-450 dark:border-rose-850'
-                            : 'border-slate-200 dark:border-slate-800 focus:border-indigo-500'
-                        }`}
+                        className="w-full px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-950 dark:text-white text-xs outline-none"
                       />
                     </div>
                     <div>
-                      <div className="flex items-center justify-between mb-1.5">
-                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">E-mail do Remetente *</label>
-                        {smtpSenderEmailStr && (
-                          isSmtpSenderEmailValid ? (
-                            <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold font-sans">✓ Formato correto</span>
-                          ) : (
-                            <span className="text-[10px] text-rose-500 font-bold font-sans">⚠️ Formato inválido</span>
-                          )
-                        )}
-                      </div>
+                      <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">E-mail do Remetente *</label>
                       <input
                         type="email"
                         required
                         placeholder="noreply@eventspace.com.br"
                         value={configs.smtpSenderEmail || ''}
                         onChange={(e) => setConfigs({ ...configs, smtpSenderEmail: e.target.value })}
-                        className={`w-full px-3 py-2.5 rounded-lg border text-slate-950 dark:text-white text-xs outline-none font-mono transition-all duration-200 ${
-                          smtpSenderEmailStr 
-                            ? (isSmtpSenderEmailValid 
-                                ? 'border-emerald-500 dark:border-emerald-75 bg-emerald-50/10 dark:bg-emerald-950/10 focus:border-emerald-500' 
-                                : 'border-rose-500 dark:border-rose-800 bg-rose-50/10 dark:bg-rose-950/10 focus:border-rose-500'
-                              )
-                            : (saveAttempted 
-                                ? 'border-rose-450 dark:border-rose-800' 
-                                : 'border-slate-200 dark:border-slate-800 focus:border-indigo-500'
-                              )
-                        }`}
+                        className="w-full px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-950 dark:text-white text-xs outline-none font-mono"
                       />
                     </div>
                   </div>
@@ -982,7 +878,7 @@ export default function NotificationsView() {
                 <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1.5">E-mail Administrativo para Alertas</label>
                 <input
                   type="email"
-                  placeholder="clecioferreiracorretor@gmail.com"
+                  placeholder="admin@eventspace.com.br"
                   value={configs.adminEmail || ''}
                   onChange={(e) => setConfigs({ ...configs, adminEmail: e.target.value })}
                   className="w-full px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-950 dark:text-white font-mono text-xs outline-none focus:border-indigo-500"

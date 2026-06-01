@@ -23,7 +23,7 @@ interface LoginViewProps {
 }
 
 export default function LoginView({ onLoginSuccess }: LoginViewProps) {
-  const [email, setEmail] = useState('clecioferreiracorretor@gmail.com');
+  const [email, setEmail] = useState('admin@eventspace.com.br');
   const [password, setPassword] = useState('123456');
   const [loading, setLoading] = useState(false);
   const [formMode, setFormMode] = useState<'login' | 'forgot'>('login');

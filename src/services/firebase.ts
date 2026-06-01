@@ -55,13 +55,7 @@ export const auth = firebaseAuth;
 export async function getCurrentUser(): Promise<any> {
   const localUserStr = localStorage.getItem('es_user_session');
   if (localUserStr) {
-    const loaded = JSON.parse(localUserStr);
-    // Migrate old admin session to new superadmin email dynamically
-    if (loaded && (loaded.email === 'admin@eventspace.com.br' || !loaded.email)) {
-      loaded.email = 'clecioferreiracorretor@gmail.com';
-      localStorage.setItem('es_user_session', JSON.stringify(loaded));
-    }
-    return loaded;
+    return JSON.parse(localUserStr);
   }
 
   if (auth) {
@@ -88,7 +82,7 @@ export async function getCurrentUser(): Promise<any> {
   // Local Dev default session initializer
   const defaultMockUser = {
     uid: 'clecio_admin_dev_10',
-    email: 'clecioferreiracorretor@gmail.com',
+    email: 'admin@eventspace.com.br',
     displayName: 'Clécio Santos (Superadmin)',
     photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&h=80&fit=crop',
     role: 'superadmin',
@@ -135,10 +129,10 @@ export async function loginWithCredentials(emailArg: string, passwordArg: string
   }
 
   // Simulate local success matching
-  if ((emailArg === 'clecioferreiracorretor@gmail.com' || emailArg === 'admin@eventspace.com.br') && passwordArg === '123456') {
+  if (emailArg === 'admin@eventspace.com.br' && passwordArg === '123456') {
     const formatted = {
       uid: 'clecio_admin_dev_10',
-      email: 'clecioferreiracorretor@gmail.com',
+      email: emailArg,
       displayName: 'Clécio Santos (Superadmin)',
       photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&h=80&fit=crop',
       role: 'superadmin'

@@ -21,6 +21,9 @@ export interface Espaco {
   nome: string;
   capacidade: number;
   valorLocacao: number;
+  taxaLimpeza?: number;
+  taxaCancelamento?: number;
+  porcentagemSinal?: number;
   descricao: string;
   fotos: string[]; // URLs or base64
   status: 'Ativo' | 'Inativo';
@@ -41,6 +44,7 @@ export interface Reserva {
   status: StatusReserva;
   observacoes?: string;
   createdAt: string;
+  taxaLimpeza?: number;
 }
 
 export interface Pagamento {

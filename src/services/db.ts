@@ -23,10 +23,13 @@ const INITIAL_SPACES: Espaco[] = [
   {
     id: "espaco_1",
     nome: "Espaço Tropical",
-    capacidade: 350,
-    valorLocacao: 4800,
-    descricao: "Maravilhoso salão de festas decorado com elementos tropicais, paisagismo tropical integrado, pé-direito imponente e infraestrutura de alta categoria. Perfeito para casamentos, formaturas, confraternizações corporativas e aniversários de 15 anos dos sonhos.",
-    fotos: ["https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&q=80&w=800"],
+    capacidade: 80,
+    valorLocacao: 450,
+    taxaLimpeza: 50,
+    taxaCancelamento: 10,
+    porcentagemSinal: 50,
+    descricao: "Espaço Tropical - Lazer e Eventos\nMomentos inesquecíveis com família e amigos! 🌴\n\nDIÁRIAS DE LAZER (Ideal para churrascos, aniversários e reuniões):\n• Segunda a Sexta-feira: R$ 400,00\n• Sábados, Domingos e Feriados: R$ 450,00\n• Taxa de Limpeza (Obrigatória): R$ 50,00\n• Horário Regular: 08:00 às 18:00 (Eventos noturnos a combinar)\n\nPACOTE ESPECIAL (Casamentos e Debutantes):\n• Valor Promocional: R$ 800,00 (+ taxa de limpeza)\n• Logística Inclusa:\n  - 1º Dia: Disponibilidade para ornamentação e montagem (durante o dia)\n  - 1ª Noite (Evento): Realização da festa no horário combinado\n  - 2º Dia: Prazo para retirada da decoração e desmontagem\n\nESTRUTURA E FACILIDADES:\n• Piscinas: Adulto e Infantil\n• Acomodação: 1 suíte climatizada (Ar-condicionado)\n• Mobiliário: 35 cadeiras e 8 mesas\n• Área Gourmet: Churrasqueira, Freezer e Cooktop (4 bocas - não fornecemos o botijão de gás)\n• Tecnologia: Wi-Fi, Alexa, TV e Caixa de Som profissional\n• Sanitários: 3 femininos e 2 masculinos\n\nInstagram: @espaco.tropical1 | WhatsApp: (75) 99154-4045",
+    fotos: ["https://images.unsplash.com/photo-1564507592333-c60657eea523?auto=format&fit=crop&q=80&w=800"],
     status: 'Ativo'
   }
 ];
@@ -84,13 +87,14 @@ const INITIAL_BOOKINGS: Reserva[] = [
     espacoId: "espaco_1",
     tipoEvento: "Casamento",
     dataEvento: getRelativeDateISO(15), // 15 days in future
-    horario: "16:00 - 02:00",
-    qtdConvidados: 250,
-    valorTotal: 4800,
-    valorSinal: 1500,
+    horario: "08:00 - 18:00",
+    qtdConvidados: 60,
+    valorTotal: 850, // 800 rent + 50 cleaning fee
+    valorSinal: 425,
     status: 'Confirmado',
     observacoes: "Sinal do casamento quitado. Decoração clássica e floral.",
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    taxaLimpeza: 50
   },
   {
     id: "res_2",
@@ -99,12 +103,13 @@ const INITIAL_BOOKINGS: Reserva[] = [
     tipoEvento: "Confraternização",
     dataEvento: getRelativeDateISO(5), // 5 days in future
     horario: "12:00 - 20:00",
-    qtdConvidados: 400,
-    valorTotal: 6500,
-    valorSinal: 2000,
+    qtdConvidados: 45,
+    valorTotal: 500, // 450 weekend + 50 cleaning fee
+    valorSinal: 250,
     status: 'Aguardando sinal',
     observacoes: "Necessita de gerador extra para telão de LED externo.",
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    taxaLimpeza: 50
   },
   {
     id: "res_3",
@@ -113,12 +118,13 @@ const INITIAL_BOOKINGS: Reserva[] = [
     tipoEvento: "Aniversário 15 anos",
     dataEvento: getRelativeDateISO(-5), // 5 days in past
     horario: "18:00 - 01:00",
-    qtdConvidados: 150,
-    valorTotal: 2900,
-    valorSinal: 1000,
+    qtdConvidados: 70,
+    valorTotal: 850, // 800 special package + 50
+    valorSinal: 400,
     status: 'Realizado',
     observacoes: "A debutante amou a iluminação ambiente. Evento finalizado com sucesso.",
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    taxaLimpeza: 50
   },
   {
     id: "res_4",
@@ -126,13 +132,14 @@ const INITIAL_BOOKINGS: Reserva[] = [
     espacoId: "espaco_1",
     tipoEvento: "Boda de Prata",
     dataEvento: getRelativeDateISO(30), // 30 days in future
-    horario: "14:00 - 22:00",
-    qtdConvidados: 180,
-    valorTotal: 6500,
-    valorSinal: 1500,
+    horario: "08:00 - 18:00",
+    qtdConvidados: 50,
+    valorTotal: 850, // 800 package + 50
+    valorSinal: 400,
     status: 'Orçamento',
     observacoes: "Pre-reserva agendada por telefone.",
-    createdAt: new Date().toISOString()
+    createdAt: new Date().toISOString(),
+    taxaLimpeza: 50
   }
 ];
 
@@ -140,7 +147,7 @@ const INITIAL_PAYMENTS: Pagamento[] = [
   {
     id: "pay_1",
     reservaId: "res_1",
-    valor: 1500,
+    valor: 425,
     formaPagamento: "PIX",
     status: "Confirmado",
     dataPagamento: getRelativeDateISO(-10)
@@ -148,21 +155,21 @@ const INITIAL_PAYMENTS: Pagamento[] = [
   {
     id: "pay_2",
     reservaId: "res_1",
-    valor: 3300,
+    valor: 425,
     formaPagamento: "PIX",
     status: "Pendente"
   },
   {
     id: "pay_3",
     reservaId: "res_2",
-    valor: 2000,
+    valor: 250,
     formaPagamento: "Transferência",
     status: "Pendente"
   },
   {
     id: "pay_4",
     reservaId: "res_3",
-    valor: 1000,
+    valor: 400,
     formaPagamento: "Dinheiro",
     status: "Confirmado",
     dataPagamento: getRelativeDateISO(-15)
@@ -170,7 +177,7 @@ const INITIAL_PAYMENTS: Pagamento[] = [
   {
     id: "pay_5",
     reservaId: "res_3",
-    valor: 1900,
+    valor: 450,
     formaPagamento: "Cartão",
     status: "Confirmado",
     dataPagamento: getRelativeDateISO(-5)
@@ -205,7 +212,7 @@ const INITIAL_CONTRACTS: Contrato[] = [
   {
     id: "cnt_1",
     reservaId: "res_1",
-    conteudoCustomizado: "CONTRATO DE LOCAÇÃO DE ESPAÇO PARA EVENTOS\n\nLOCADOR: EventSpace ERP Ltda\nLOCATÁRIO: Ana Carolina Albuquerque\n\nOBJETO: Locação do Salão Realeza Classical no dia 2026-06-15 das 16:00 às 02:00 para realização de Casamento.\n\nVALOR: R$ 4.800,00, com sinal de R$ 1.500,00 já liquidado.\n\nCláusulas gerais aplicadas.",
+    conteudoCustomizado: "CONTRATO DE LOCAÇÃO DE ESPAÇO PARA EVENTOS\n\nLOCADOR: EventSpace ERP Ltda\nLOCATÁRIO: Ana Carolina Albuquerque\n\nOBJETO: Locação do Salão Realeza Classical no dia 2026-06-15 das 08:00 às 18:00 para realização de Casamento. O uso do espaço fora do horário estipulado contratualmente poderá estar sujeito a cobrança de taxas extras por hora excedente.\n\nVALOR: R$ 4.800,00, com sinal de R$ 1.500,00 já liquidado.\n\nCláusulas gerais aplicadas.",
     createdAt: getRelativeDateISO(-10)
   },
   {
@@ -237,7 +244,7 @@ const INITIAL_SYSTEM_USERS: SystemUser[] = [
   {
     id: "usr_1",
     nome: "Clécio Santos (Superadmin)",
-    email: "clecioferreiracorretor@gmail.com",
+    email: "admin@eventspace.com.br",
     senhaSecreta: "123456",
     role: "superadmin",
     createdAt: new Date().toISOString()
@@ -254,16 +261,62 @@ const INITIAL_SYSTEM_USERS: SystemUser[] = [
 
 // Helper to initialize local data structure in storage
 function initLocalDB() {
-  if (!localStorage.getItem('es_spaces') || !localStorage.getItem('es_spaces')?.includes('Espaço Tropical')) {
+  const needsMigration = !localStorage.getItem('es_spaces') || 
+                         localStorage.getItem('es_spaces')?.includes('"capacidade":350') || 
+                         localStorage.getItem('es_spaces')?.includes('"valorLocacao":4800') ||
+                         !localStorage.getItem('es_spaces')?.includes('450');
+
+  if (needsMigration) {
     localStorage.setItem('es_spaces', JSON.stringify(INITIAL_SPACES));
+  } else {
+    try {
+      const stored = localStorage.getItem('es_spaces');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        let modified = false;
+        parsed.forEach((x: any) => {
+          if (x.taxaLimpeza === undefined) {
+            x.taxaLimpeza = 50;
+            modified = true;
+          }
+        });
+        if (modified) {
+          localStorage.setItem('es_spaces', JSON.stringify(parsed));
+        }
+      }
+    } catch (_) {}
   }
+
   if (!localStorage.getItem('es_clients')) {
     localStorage.setItem('es_clients', JSON.stringify(INITIAL_CLIENTS));
   }
-  if (!localStorage.getItem('es_bookings') || localStorage.getItem('es_bookings')?.includes('espaco_2')) {
+  const needsBookingReset = !localStorage.getItem('es_bookings') || 
+                            localStorage.getItem('es_bookings')?.includes('"valorTotal":5050') ||
+                            localStorage.getItem('es_bookings')?.includes('espaco_2') ||
+                            !localStorage.getItem('es_bookings')?.includes('"taxaLimpeza":50');
+
+  if (needsBookingReset) {
     localStorage.setItem('es_bookings', JSON.stringify(INITIAL_BOOKINGS));
+    localStorage.setItem('es_payments', JSON.stringify(INITIAL_PAYMENTS));
+  } else {
+    try {
+      const stored = localStorage.getItem('es_bookings');
+      if (stored) {
+        const parsed = JSON.parse(stored);
+        let modified = false;
+        parsed.forEach((x: any) => {
+          if (x.taxaLimpeza === undefined) {
+            x.taxaLimpeza = 50;
+            modified = true;
+          }
+        });
+        if (modified) {
+          localStorage.setItem('es_bookings', JSON.stringify(parsed));
+        }
+      }
+    } catch (_) {}
   }
-  if (!localStorage.getItem('es_payments')) {
+  if (!localStorage.getItem('es_payments') || needsBookingReset) {
     localStorage.setItem('es_payments', JSON.stringify(INITIAL_PAYMENTS));
   }
   if (!localStorage.getItem('es_contracts')) {
@@ -272,7 +325,7 @@ function initLocalDB() {
   if (!localStorage.getItem('es_logs')) {
     localStorage.setItem('es_logs', JSON.stringify(INITIAL_LOGS));
   }
-  if (!localStorage.getItem('es_system_users') || !localStorage.getItem('es_system_users')?.includes('clecioferreiracorretor@gmail.com')) {
+  if (!localStorage.getItem('es_system_users')) {
     localStorage.setItem('es_system_users', JSON.stringify(INITIAL_SYSTEM_USERS));
   }
 }

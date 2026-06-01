@@ -30,7 +30,8 @@ import {
   Check,
   Copy,
   Loader2,
-  ShieldCheck
+  ShieldCheck,
+  Share2
 } from 'lucide-react';
 
 interface BookingsViewProps {
@@ -40,6 +41,16 @@ interface BookingsViewProps {
 
 export default function BookingsView({ onNavigateToView, focusedBookingId }: BookingsViewProps) {
   const [bookings, setBookings] = useState<Reserva[]>([]);
+  const [copiedBookingId, setCopiedBookingId] = useState<string | null>(null);
+
+  const handleCopyClientLink = (bookingId: string) => {
+    const origin = window.location.origin;
+    const pathname = window.location.pathname;
+    const link = `${origin}${pathname}#reserva?booking=${bookingId}`;
+    navigator.clipboard.writeText(link);
+    setCopiedBookingId(bookingId);
+    setTimeout(() => setCopiedBookingId(null), 2000);
+  };
   const [clients, setClients] = useState<Cliente[]>([]);
   const [spaces, setSpaces] = useState<Espaco[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,8 +82,9 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
   const [spaceId, setSpaceId] = useState('');
   const [tipoEvento, setTipoEvento] = useState('Casamento');
   const [dataEvento, setDataEvento] = useState('');
-  const [horario, setHorario] = useState('16:00 - 02:00');
+  const [horario, setHorario] = useState('08:00 - 18:00');
   const [qtdConvidados, setQtdConvidados] = useState(150);
+  const [taxaLimpeza, setTaxaLimpeza] = useState(0);
   const [valorTotal, setValorTotal] = useState(0);
   const [valorSinal, setValorSinal] = useState(0);
   const [status, setStatus] = useState<StatusReserva>('Orçamento');
@@ -87,11 +99,24 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
     if (spaceId && !editingBooking) {
       const sp = spaces.find(s => s.id === spaceId);
       if (sp) {
-        setValorTotal(sp.valorLocacao);
-        setValorSinal(Math.round(sp.valorLocacao * 0.3));
+        const fee = sp.taxaLimpeza !== undefined ? sp.taxaLimpeza : 250;
+        const pct = sp.porcentagemSinal !== undefined ? sp.porcentagemSinal : 50;
+        setTaxaLimpeza(fee);
+        setValorTotal(sp.valorLocacao + fee);
+        setValorSinal(Math.round((sp.valorLocacao + fee) * (pct / 100)));
       }
     }
   }, [spaceId, spaces]);
+
+  const handleTaxaLimpezaChange = (val: number) => {
+    setTaxaLimpeza(val);
+    const sp = spaces.find(s => s.id === spaceId);
+    if (sp) {
+      const pct = sp.porcentagemSinal !== undefined ? sp.porcentagemSinal : 50;
+      setValorTotal(sp.valorLocacao + val);
+      setValorSinal(Math.round((sp.valorLocacao + val) * (pct / 100)));
+    }
+  };
 
   // Countdown timer effect for immediate PIX simulation
   useEffect(() => {
@@ -114,7 +139,15 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
     const savedName = localStorage.getItem('cfg_pix_name') || 'Holding EventSpace Administradora LTDA';
     const savedCity = localStorage.getItem('cfg_pix_city') || 'SAO PAULO';
 
-    const cleanKey = savedKey.replace(/[^a-zA-Z0-9@.-]/g, '');
+    let cleanKey = savedKey.trim();
+    // For CPF/CNPJ or pure numeric phone keys, remove non-digits for banking compatibility
+    const digitsOnly = cleanKey.replace(/\D/g, '');
+    if (digitsOnly.length === 11 || digitsOnly.length === 14 || (digitsOnly.length >= 10 && digitsOnly.length <= 13 && (cleanKey.startsWith('+') || !isNaN(Number(cleanKey.replace(/[+\s-]/g, '')))))) {
+      cleanKey = digitsOnly;
+    } else {
+      cleanKey = cleanKey.replace(/[^a-zA-Z0-9@.-]/g, '');
+    }
+
     const cleanName = savedName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").slice(0, 25).toUpperCase();
     const cleanCity = savedCity.normalize("NFD").replace(/[\u0300-\u036f]/g, "").slice(0, 15).toUpperCase();
 
@@ -128,8 +161,22 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
       `60${cleanCity.length.toString().padStart(2, '0')}${cleanCity}` +
       `62070503***6304`;
 
-    const mockCRC = "A7D2";
-    const key = payloadStart + mockCRC;
+    // Dynamic Calculation of CRC16-CCITT (polynomial 0x1021, seed 0xFFFF, without reflection)
+    let crc = 0xFFFF;
+    const polynomial = 0x1021;
+    for (let i = 0; i < payloadStart.length; i++) {
+      const charCode = payloadStart.charCodeAt(i);
+      crc ^= (charCode << 8);
+      for (let j = 0; j < 8; j++) {
+        if ((crc & 0x8000) !== 0) {
+          crc = ((crc << 1) ^ polynomial) & 0xFFFF;
+        } else {
+          crc = (crc << 1) & 0xFFFF;
+        }
+      }
+    }
+    const finalCRC = crc.toString(16).toUpperCase().padStart(4, '0');
+    const key = payloadStart + finalCRC;
 
     setPixModalCopiaCola(key);
     setCreatedBookingForPix(booking);
@@ -217,8 +264,9 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
     setTipoEvento('Casamento');
     const today = new Date().toISOString().split('T')[0];
     setDataEvento(today);
-    setHorario('16:00 - 02:00');
+    setHorario('08:00 - 18:00');
     setQtdConvidados(150);
+    setTaxaLimpeza(0);
     setStatus('Orçamento');
     setObservacoes('');
     setRegisterNewClientOnFly(false);
@@ -237,6 +285,7 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
     setDataEvento(b.dataEvento);
     setHorario(b.horario);
     setQtdConvidados(b.qtdConvidados);
+    setTaxaLimpeza(b.taxaLimpeza !== undefined ? b.taxaLimpeza : 0);
     setValorTotal(b.valorTotal);
     setValorSinal(b.valorSinal);
     setStatus(b.status);
@@ -307,7 +356,8 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
       valorTotal: Number(valorTotal),
       valorSinal: Number(valorSinal),
       status,
-      observacoes
+      observacoes,
+      taxaLimpeza: Number(taxaLimpeza)
     };
 
     if (editingBooking) {
@@ -335,7 +385,8 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
           valorSinal: Number(valorSinal),
           status,
           observacoes,
-          createdAt: editingBooking ? editingBooking.createdAt : new Date().toISOString()
+          createdAt: editingBooking ? editingBooking.createdAt : new Date().toISOString(),
+          taxaLimpeza: Number(taxaLimpeza)
         };
 
         if (!editingBooking) {
@@ -527,6 +578,9 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
                     <td className="py-4 px-4">
                       <p className="font-bold text-indigo-650 dark:text-indigo-400 font-mono">Total: R$ {b.valorTotal.toLocaleString('pt-BR')}</p>
                       <p className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5 font-mono">Sinal: R$ {b.valorSinal.toLocaleString('pt-BR')}</p>
+                      {b.taxaLimpeza !== undefined && b.taxaLimpeza > 0 && (
+                        <p className="text-[9px] text-amber-500 font-medium mt-0.5 font-mono">Limpeza: R$ {b.taxaLimpeza.toLocaleString('pt-BR')}</p>
+                      )}
                     </td>
 
                     {/* Status Badge */}
@@ -559,6 +613,21 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
                         >
                           <FileText className="w-3.5 h-3.5" />
                           <span>Contrato</span>
+                        </button>
+
+                        {/* Interactive Copy Client Link shortcut */}
+                        <button
+                          id={`btn-copy-client-link-${b.id}`}
+                          onClick={() => handleCopyClientLink(b.id)}
+                          className={`p-1 px-2.5 rounded-lg font-bold text-[10px] flex items-center gap-1 transition cursor-pointer ${
+                            copiedBookingId === b.id 
+                              ? 'bg-emerald-500 text-white' 
+                              : 'bg-teal-500/10 text-teal-600 dark:text-teal-400 hover:bg-teal-500 hover:text-white'
+                          }`}
+                          title="Copiar Link para Cliente Acessar Ficha"
+                        >
+                          <Share2 className="w-3.5 h-3.5" />
+                          <span>{copiedBookingId === b.id ? 'Copiado!' : 'Link Cliente'}</span>
                         </button>
 
                         {/* Interactive Manual Reminder trigger */}
@@ -776,25 +845,44 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
               </div>
 
               {/* Billings inputs */}
-              <div className="grid grid-cols-2 gap-4 bg-slate-50 dark:bg-slate-950/20 p-3 rounded-lg border border-dashed border-gray-205 dark:border-slate-800/80">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 dark:bg-slate-950/20 p-3 rounded-lg border border-dashed border-gray-205 dark:border-slate-800/80">
                 <div>
-                  <label className="block text-xs font-bold text-indigo-650 dark:text-indigo-400 mb-1">Custo Global Final (R$) *</label>
+                  <label className="block text-[10px] font-bold text-teal-600 dark:text-teal-450 mb-1">Locação Base (R$)</label>
+                  <input
+                    type="number"
+                    disabled
+                    value={spaces.find(s => s.id === spaceId)?.valorLocacao || 0}
+                    className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-gray-200 bg-gray-100 dark:bg-slate-900 text-gray-400 font-mono focus:outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-amber-600 dark:text-amber-550 mb-1">Limpeza (R$) *</label>
+                  <input
+                    type="number"
+                    required
+                    value={taxaLimpeza}
+                    onChange={(e) => handleTaxaLimpezaChange(Number(e.target.value))}
+                    className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-amber-200 bg-white dark:bg-slate-850 text-gray-950 dark:text-white font-mono"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-indigo-650 dark:text-indigo-400 mb-1">Total Geral (R$) *</label>
                   <input
                     type="number"
                     required
                     value={valorTotal}
                     onChange={(e) => setValorTotal(Number(e.target.value))}
-                    className="w-full px-3.5 py-2 rounded-lg border border-indigo-200 bg-white dark:bg-slate-800 text-gray-950 dark:text-white font-mono"
+                    className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-indigo-200 bg-white dark:bg-slate-850 text-gray-950 dark:text-white font-mono"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-emerald-600 dark:text-emerald-400 mb-1">Adiantamento Sinal (R$) *</label>
+                <div className="sm:col-span-3">
+                  <label className="block text-[10px] font-bold text-emerald-600 dark:text-emerald-400 mb-1">Sinal de Entrada (Adiantamento 30%) *</label>
                   <input
                     type="number"
                     required
                     value={valorSinal}
                     onChange={(e) => setValorSinal(Number(e.target.value))}
-                    className="w-full px-3.5 py-2 rounded-lg border border-emerald-200 bg-white dark:bg-slate-800 text-gray-950 dark:text-white font-mono"
+                    className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-emerald-200 bg-white dark:bg-slate-850 text-gray-955 dark:text-white font-mono"
                   />
                 </div>
               </div>
@@ -909,23 +997,14 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
             {/* Main Interactive Screen */}
             {pixModalStatus === 'waiting' ? (
               <div className="space-y-4">
-                {/* Simulated Barcode QR representation */}
-                <div className="w-40 h-40 bg-slate-50 dark:bg-slate-950 p-2 border border-slate-150 dark:border-slate-800 rounded-2xl mx-auto flex items-center justify-center relative shadow-inner">
-                  <div className="absolute inset-0 bg-indigo-50/10 backdrop-blur-[0.5px] flex justify-center items-center rounded-2xl">
-                    <div className="w-32 h-32 grid grid-cols-8 gap-0.5 overflow-hidden p-0.5 opacity-60">
-                      {Array.from({ length: 64 }).map((_, i) => (
-                        <div 
-                          key={i} 
-                          className={`h-3 rounded-sm ${
-                            (i * i) % 3 === 0 ? 'bg-indigo-600' : (i + i + 1) % 5 === 0 ? 'bg-slate-955' : 'bg-transparent'
-                          }`}
-                        ></div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="w-10 h-10 bg-white dark:bg-slate-900 rounded-xl p-1 shadow border border-slate-50 dark:border-slate-800 z-10 flex items-center justify-center font-black text-[9px] text-indigo-600 dark:text-indigo-400">
-                    PIX
-                  </div>
+                {/* Visual QR code styled box */}
+                <div className="w-40 h-40 bg-white p-2 border border-slate-150 dark:border-slate-800 rounded-2xl mx-auto flex items-center justify-center relative shadow-sm">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(pixModalCopiaCola)}`}
+                    alt="QR Code Pix"
+                    className="w-36 h-36 object-contain"
+                    referrerPolicy="no-referrer"
+                  />
                 </div>
 
                 {/* Copia e cola code copy box */}

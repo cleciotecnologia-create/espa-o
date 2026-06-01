@@ -76,7 +76,8 @@ export default function FunnelView() {
   const activeEspaco = espacos.find(s => s.id === selectedEspacoId);
   
   const estimatedTotal = activeEspaco ? activeEspaco.valorLocacao : 2500;
-  const estimatedSignal = estimatedTotal * 0.50; // 50%
+  const pct = activeEspaco && activeEspaco.porcentagemSinal !== undefined ? activeEspaco.porcentagemSinal : 50;
+  const estimatedSignal = estimatedTotal * (pct / 100);
 
   // Toast status feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -152,10 +153,26 @@ export default function FunnelView() {
 
   // Generates Central Bank of Brazil compliant dynamic PIX payload (EMV standard BR Code)
   const generateDynamicPixString = () => {
-    const formattedAmount = estimatedSignal.toFixed(2).replace('.', '');
+    const amString = estimatedSignal.toFixed(2);
     const txId = "EXP" + Math.floor(100000000 + Math.random() * 900000000);
-    const code = `00020101021226870014br.gov.bcb.pix2565api.eventspace.com.br/v2/${txId}520400005303986540${formattedAmount.length.toString().padStart(2, '0')}${formattedAmount}5802BR5915EventSpace ERP6009SAO PAULO62070503***6304A26C`;
-    return code;
+    const payloadStart = `00020101021226870014br.gov.bcb.pix2565api.eventspace.com.br/v2/${txId}520400005303986540${amString.length.toString().padStart(2, '0')}${amString}5802BR5915EventSpace ERP6009SAO PAULO62070503***6304`;
+
+    // Dynamic Calculation of CRC16-CCITT (polynomial 0x1021, seed 0xFFFF, without reflection)
+    let crc = 0xFFFF;
+    const polynomial = 0x1021;
+    for (let i = 0; i < payloadStart.length; i++) {
+      const charCode = payloadStart.charCodeAt(i);
+      crc ^= (charCode << 8);
+      for (let j = 0; j < 8; j++) {
+        if ((crc & 0x8000) !== 0) {
+          crc = ((crc << 1) ^ polynomial) & 0xFFFF;
+        } else {
+          crc = (crc << 1) & 0xFFFF;
+        }
+      }
+    }
+    const finalCRC = crc.toString(16).toUpperCase().padStart(4, '0');
+    return payloadStart + finalCRC;
   };
 
   // STEP 1: Commits the reservation, requires complete customer details, saves updated client records, and compiles the contract draft
@@ -252,6 +269,9 @@ export default function FunnelView() {
     
     addSimulateLog("Compilando termos regulamentares da minuta contratual...");
 
+    const pct = activeEspaco.porcentagemSinal !== undefined ? activeEspaco.porcentagemSinal : 50;
+    const pctStr = pct === 50 ? '50% (cinquenta por cento)' : `${pct}%`;
+
     const contractBody = `CONTRATO DE BENEFICIAMENTO E LOCAÇÃO TEMPORÁRIA DE INFRAESTRUTURA LOCATÍCIA
 
 I. DAS PARTES CONTRATANTES
@@ -259,10 +279,10 @@ LOCADOR: ${lessor.razaoSocial} (Nome Fantasia: ${lessor.nomeFantasia}), inscrito
 LOCATÁRIO: ${cli.nome}, inscrito sob CPF nº ${cli.cpf}, residente e domiciliado no endereço: ${cli.endereco || 'Não Informado'}, e-mail: ${cli.email || 'Não Informado'} e telefone contractar principal: ${cli.telefone}.
 
 II. DO OBJETO E AGENDAMENTO
-Fica locada em caráter temporário a dependência cênica do espaço ${activeEspaco.nome} para a realização de evento corporativo/social da categoria ${tipoEvento}, pautado exclusivamente no dia ${new Date(selectedDate).toLocaleDateString('pt-BR')}, período correspondente a ${selectedHour}, para o contingente de até ${numQtdConvidados} convidados.
+Fica locada em caráter temporário a dependência cênica do espaço ${activeEspaco.nome} para a realização de evento corporativo/social da categoria ${tipoEvento}, pautado exclusivamente no dia ${new Date(selectedDate).toLocaleDateString('pt-BR')}, período sugerido de ${selectedHour} (Horário Contratual Padrão: 08:00 às 18:00), para o contingente de até ${numQtdConvidados} convidados. O uso do espaço fora do período regulamentar das 08:00 às 18:00 poderá acarretar a cobrança de taxas extras.
 
 III. DOS AJUSTES FINANCEIROS E DEPÓSITO DE ARRAS
-A contraprestação ajustada da diária é de R$ ${estimatedTotal.toLocaleString('pt-BR')}, tendo como cláusula irrevogável de bloqueio e confirmação o adiantamento compulsório de sinal confirmatório correspondante a 50% (cinquenta por cento) do montante, totalizando R$ ${estimatedSignal.toLocaleString('pt-BR')}.
+A contraprestação ajustada da diária é de R$ ${estimatedTotal.toLocaleString('pt-BR')}, tendo como cláusula irrevogável de bloqueio e confirmação o adiantamento compulsório de sinal confirmatório correspondante a ${pctStr} do montante, totalizando R$ ${estimatedSignal.toLocaleString('pt-BR')}.
 
 IV. DA CLÁUSULA COMPROMISSÓRIA DE DESISTÊNCIA E RETENÇÃO DE SINAL (ART. 418 DO CÓDIGO CIVIL)
 Em perfeito e estrito acordo com as disposições contidas no Artigo 418 do Código Civil Brasileiro, fica expressamente convencionado entre as partes que:
@@ -754,7 +774,7 @@ LOCADOR: ${lessor.razaoSocial} (Nome Fantasia: ${lessor.nomeFantasia}), inscrito
 LOCATÁRIO: ${clientNome}, portador do CPF nº ${clientCPF}, residente no endereço situado em: ${clientEndereco}, e-mail de contato: ${clientEmail || 'Não informado'} e WhatsApp: ${clientTelefone}.
 
 II. DO OBJETO E AGENDAMENTO
-Constitui objeto deste a cessão temporária do espaço comercial ${activeEspaco?.nome || 'Espaço de Eventos'} para o agendamento da modalidade ${tipoEvento} no dia ${new Date(selectedDate).toLocaleDateString('pt-BR')}, período sugerido: ${selectedHour}. O contingente máximo admitido é de ${numQtdConvidados} convidados.
+Constitui objeto deste a cessão temporária do espaço comercial ${activeEspaco?.nome || 'Espaço de Eventos'} para o agendamento da modalidade ${tipoEvento} no dia ${new Date(selectedDate).toLocaleDateString('pt-BR')}, período sugerido: ${selectedHour} (Horário Contratual Padrão: 08:00 às 18:00), para o contingente de até ${numQtdConvidados} convidados. O uso do espaço fora do período regulamentar das 08:00 às 18:00 poderá acarretar a cobrança de taxas extras.
 
 III. DO VALOR DO CONTRATO E GARANTIA DE SINAL (ARRAS)
 O valor total ajustado para a locação em tela é de R$ ${estimatedTotal.toLocaleString('pt-BR')}. Fica estritamente convencionado que o bloqueio permanente da agenda comercial se dará exclusivamente após a quitação do sinal confirmatório correspondente a 50% (cinquenta por cento) do montante, totalizando R$ ${estimatedSignal.toLocaleString('pt-BR')}, servindo como princípio de pagamento conforme as diretrizes contratuais vigentes.

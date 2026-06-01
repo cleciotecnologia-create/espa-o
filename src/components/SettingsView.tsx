@@ -75,6 +75,17 @@ export default function SettingsView() {
   const [userError, setUserError] = useState<string | null>(null);
   const [userSuccess, setUserSuccess] = useState<string | null>(null);
 
+  const [showGeneralSuccess, setShowGeneralSuccess] = useState(false);
+  const [showPixSuccess, setShowPixSuccess] = useState(false);
+  const [localToast, setLocalToast] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+
+  const showToast = (text: string, type: 'success' | 'error' = 'success') => {
+    setLocalToast({ text, type });
+    setTimeout(() => {
+      setLocalToast(null);
+    }, 4500);
+  };
+
   useEffect(() => {
     loadDatabaseStats();
     loadSystemUsersList();
@@ -160,6 +171,13 @@ export default function SettingsView() {
     localStorage.setItem('cfg_whatsapp_auto', String(automaticWhatsApp));
     localStorage.setItem('cfg_backup_freq', backupFrequencia);
 
+    // Notify Layout and options elements in real-time
+    window.dispatchEvent(new Event('brand-colors-updated'));
+
+    setShowGeneralSuccess(true);
+    setTimeout(() => setShowGeneralSuccess(false), 3000);
+    showToast('Preferências Gerais salvas com sucesso!');
+
     setBackupMessage({ text: 'Configurações de preferências salvas com sucesso!', type: 'success' });
     setTimeout(() => setBackupMessage(null), 4000);
   };
@@ -175,6 +193,13 @@ export default function SettingsView() {
     localStorage.setItem('cfg_pix_environment', pixEnvironment);
     localStorage.setItem('cfg_pix_token', pixToken);
 
+    // Notify Layout elements in real-time
+    window.dispatchEvent(new Event('brand-colors-updated'));
+
+    setShowPixSuccess(true);
+    setTimeout(() => setShowPixSuccess(false), 3000);
+    showToast('Configurações do PIX salvas com sucesso!');
+
     setBackupMessage({ text: 'Configurações de faturamento PIX e Gateway salvas com sucesso!', type: 'success' });
     setTimeout(() => setBackupMessage(null), 4000);
   };
@@ -187,6 +212,8 @@ export default function SettingsView() {
 
     // Notify Layout elements in real-time
     window.dispatchEvent(new Event('brand-colors-updated'));
+
+    showToast('Identidade visual aplicada com sucesso!');
 
     setBackupMessage({ text: 'Estética de identidade visual aplicada e propagada com sucesso!', type: 'success' });
     setTimeout(() => setBackupMessage(null), 4000);
@@ -525,7 +552,13 @@ export default function SettingsView() {
 
             </div>
 
-            <div className="flex justify-end pt-3 border-t border-slate-50 dark:border-slate-850">
+            <div className="flex justify-end items-center gap-3 pt-3 border-t border-slate-50 dark:border-slate-850">
+              {showGeneralSuccess && (
+                <span className="text-xs text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1 animate-fade-in">
+                  <Check className="w-3.5 h-3.5 text-emerald-500" />
+                  Salvo com sucesso!
+                </span>
+              )}
               <button
                 onClick={saveGeneralSettings}
                 className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-xl text-xs font-extrabold shadow-sm transition cursor-pointer"
@@ -688,7 +721,6 @@ export default function SettingsView() {
                         <label className="block text-[9px] font-black text-slate-450 dark:text-zinc-500 uppercase tracking-widest mb-1.5">Client ID de Integração *</label>
                         <input
                           type="text"
-                          required
                           value={pixClientId}
                           onChange={(e) => setPixClientId(e.target.value)}
                           placeholder={`Insira o Client ID do ${pixGateway === 'mercadopago' ? 'Mercado Pago' : pixGateway === 'efi' ? 'Efí Bank' : 'PagSeguro'}`}
@@ -699,7 +731,6 @@ export default function SettingsView() {
                         <label className="block text-[9px] font-black text-slate-450 dark:text-zinc-500 uppercase tracking-widest mb-1.5">Client Secret *</label>
                         <input
                           type="password"
-                          required
                           value={pixClientSecret}
                           onChange={(e) => setPixClientSecret(e.target.value)}
                           placeholder="••••••••••••••••••••••••••••••••"
@@ -712,7 +743,6 @@ export default function SettingsView() {
                       <label className="block text-[9px] font-black text-slate-450 dark:text-zinc-500 uppercase tracking-widest mb-1.5">Token de API da Conta Asaas *</label>
                       <input
                         type="password"
-                        required
                         value={pixToken}
                         onChange={(e) => setPixToken(e.target.value)}
                         placeholder="Ex: $aae.Ym9sc2FfZGVfZm9sY2hhcy..."
@@ -742,7 +772,13 @@ export default function SettingsView() {
               </p>
             </div>
 
-            <div className="flex justify-end pt-3 border-t border-slate-50 dark:border-slate-850">
+            <div className="flex justify-end items-center gap-3 pt-3 border-t border-slate-50 dark:border-slate-850">
+              {showPixSuccess && (
+                <span className="text-xs text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1 animate-fade-in">
+                  <Check className="w-3.5 h-3.5 text-emerald-500" />
+                  Configurações salvas com sucesso!
+                </span>
+              )}
               <button
                 onClick={savePixSettings}
                 className="flex items-center gap-1.5 bg-indigo-600 hover:bg-indigo-700 text-white px-5 py-2 rounded-xl text-xs font-extrabold shadow-sm transition cursor-pointer"
@@ -887,7 +923,7 @@ export default function SettingsView() {
                         </td>
                         <td className="p-3 text-center whitespace-nowrap">
                           {/* Disable deleting Clécio default account for safety! */}
-                          {u.email !== 'clecioferreiracorretor@gmail.com' && u.email !== 'admin@eventspace.com.br' ? (
+                          {u.email !== 'admin@eventspace.com.br' ? (
                             <button
                               onClick={() => handleDeleteUser(u.id, u.nome)}
                               className="p-1 px-2 bg-rose-500/10 hover:bg-rose-600 hover:text-white rounded text-rose-650 text-[10px] font-bold inline-flex items-center gap-1 transition cursor-pointer"
@@ -1154,10 +1190,15 @@ export default function SettingsView() {
 
             </div>
 
-            <div className="pt-3 border-t border-slate-50 dark:border-slate-850">
+            <div className="pt-3 border-t border-slate-50 dark:border-slate-850 flex items-center justify-between gap-3">
+              {showGeneralSuccess && (
+                <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-bold flex items-center gap-1 animate-fade-in">
+                  ✓ Atualizado!
+                </span>
+              )}
               <button
                 onClick={saveGeneralSettings}
-                className="w-full py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-755 text-slate-800 dark:text-white rounded-xl text-xs font-extrabold tracking-wide transition cursor-pointer"
+                className="flex-1 py-2 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-755 text-slate-800 dark:text-white rounded-xl text-xs font-extrabold tracking-wide transition cursor-pointer"
               >
                 Atualizar Dados Corporativos
               </button>
@@ -1184,6 +1225,16 @@ export default function SettingsView() {
         </div>
 
       </div>
+
+      {localToast && (
+        <div 
+          className="fixed bottom-6 right-6 z-[99999] bg-emerald-600 dark:bg-emerald-700 text-white px-5 py-3 rounded-2xl shadow-2xl flex items-center gap-3 border border-emerald-500 animate-bounce duration-500 font-sans"
+          style={{ animationDuration: '0.8s' }}
+        >
+          <CheckCircle className="w-5 h-5 text-white flex-shrink-0" />
+          <span className="font-extrabold text-xs tracking-wider uppercase">{localToast.text}</span>
+        </div>
+      )}
 
     </div>
   );

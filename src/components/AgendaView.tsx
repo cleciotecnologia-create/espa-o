@@ -77,7 +77,7 @@ export default function AgendaView() {
   const [newClientEmail, setNewClientEmail] = useState('');
   const [formSpaceId, setFormSpaceId] = useState('');
   const [formTipoEvento, setFormTipoEvento] = useState('Casamento');
-  const [formHorario, setFormHorario] = useState('14:00 - 22:00');
+  const [formHorario, setFormHorario] = useState('08:00 - 18:00');
   const [formQtdConvidados, setFormQtdConvidados] = useState(150);
   const [formValorTotal, setFormValorTotal] = useState(0);
   const [formValorSinal, setFormValorSinal] = useState(0);
@@ -90,7 +90,8 @@ export default function AgendaView() {
       const sp = spaces.find(s => s.id === formSpaceId);
       if (sp) {
         setFormValorTotal(sp.valorLocacao);
-        setFormValorSinal(Math.round(sp.valorLocacao * 0.3)); // 30% standard sinal deposit
+        const pct = sp.porcentagemSinal !== undefined ? sp.porcentagemSinal : 50;
+        setFormValorSinal(Math.round(sp.valorLocacao * (pct / 100)));
       }
     }
   }, [formSpaceId, spaces]);
@@ -116,7 +117,15 @@ export default function AgendaView() {
     const savedName = localStorage.getItem('cfg_pix_name') || 'Holding EventSpace Administradora LTDA';
     const savedCity = localStorage.getItem('cfg_pix_city') || 'SAO PAULO';
 
-    const cleanKey = savedKey.replace(/[^a-zA-Z0-9@.-]/g, '');
+    let cleanKey = savedKey.trim();
+    // For CPF/CNPJ or pure numeric phone keys, remove non-digits for banking compatibility
+    const digitsOnly = cleanKey.replace(/\D/g, '');
+    if (digitsOnly.length === 11 || digitsOnly.length === 14 || (digitsOnly.length >= 10 && digitsOnly.length <= 13 && (cleanKey.startsWith('+') || !isNaN(Number(cleanKey.replace(/[+\s-]/g, '')))))) {
+      cleanKey = digitsOnly;
+    } else {
+      cleanKey = cleanKey.replace(/[^a-zA-Z0-9@.-]/g, '');
+    }
+
     const cleanName = savedName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").slice(0, 25).toUpperCase();
     const cleanCity = savedCity.normalize("NFD").replace(/[\u0300-\u036f]/g, "").slice(0, 15).toUpperCase();
 
@@ -130,8 +139,22 @@ export default function AgendaView() {
       `60${cleanCity.length.toString().padStart(2, '0')}${cleanCity}` +
       `62070503***6304`;
 
-    const mockCRC = "A7D2";
-    const key = payloadStart + mockCRC;
+    // Dynamic Calculation of CRC16-CCITT (polynomial 0x1021, seed 0xFFFF, without reflection)
+    let crc = 0xFFFF;
+    const polynomial = 0x1021;
+    for (let i = 0; i < payloadStart.length; i++) {
+      const charCode = payloadStart.charCodeAt(i);
+      crc ^= (charCode << 8);
+      for (let j = 0; j < 8; j++) {
+        if ((crc & 0x8000) !== 0) {
+          crc = ((crc << 1) ^ polynomial) & 0xFFFF;
+        } else {
+          crc = (crc << 1) & 0xFFFF;
+        }
+      }
+    }
+    const finalCRC = crc.toString(16).toUpperCase().padStart(4, '0');
+    const key = payloadStart + finalCRC;
 
     setPixModalCopiaCola(key);
     setCreatedBookingForPix(booking);
@@ -327,12 +350,14 @@ export default function AgendaView() {
       // Auto pre-populate form
       if (clients.length > 0) setFormClientId(clients[0].id);
       if (spaces.length > 0) {
-        setFormSpaceId(spaces[0].id);
-        setFormValorTotal(spaces[0].valorLocacao);
-        setFormValorSinal(Math.round(spaces[0].valorLocacao * 0.3));
+        const defaultSpace = spaces[0];
+        setFormSpaceId(defaultSpace.id);
+        setFormValorTotal(defaultSpace.valorLocacao);
+        const pct = defaultSpace.porcentagemSinal !== undefined ? defaultSpace.porcentagemSinal : 50;
+        setFormValorSinal(Math.round(defaultSpace.valorLocacao * (pct / 100)));
       }
       setFormTipoEvento('Casamento');
-      setFormHorario('16:00 - 02:00');
+      setFormHorario('08:00 - 18:00');
       setFormQtdConvidados(150);
       setFormStatus('Orçamento');
       setFormObservacoes('');
@@ -910,11 +935,11 @@ export default function AgendaView() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Horário Slots / Janela *</label>
+                  <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Horário Slots / Janela * <span className="text-amber-500 font-bold">(Padrão: 08:00 - 18:00)</span></label>
                   <input
                     type="text"
                     required
-                    placeholder="Ex: 14:00 - 22:00, 16:00 - 02:00"
+                    placeholder="Ex: 08:00 - 18:00"
                     value={formHorario}
                     onChange={(e) => setFormHorario(e.target.value)}
                     className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-950 dark:text-white"
@@ -1067,23 +1092,14 @@ export default function AgendaView() {
             {/* Main Interactive Screen */}
             {pixModalStatus === 'waiting' ? (
               <div className="space-y-4">
-                {/* Simulated Barcode QR representation */}
-                <div className="w-40 h-40 bg-slate-50 dark:bg-slate-950 p-2 border border-slate-150 dark:border-slate-800 rounded-2xl mx-auto flex items-center justify-center relative shadow-inner">
-                  <div className="absolute inset-0 bg-indigo-50/10 backdrop-blur-[0.5px] flex justify-center items-center rounded-2xl">
-                    <div className="w-32 h-32 grid grid-cols-8 gap-0.5 overflow-hidden p-0.5 opacity-60">
-                      {Array.from({ length: 64 }).map((_, i) => (
-                        <div 
-                          key={i} 
-                          className={`h-3 rounded-sm ${
-                            (i * i) % 3 === 0 ? 'bg-indigo-600' : (i + i + 1) % 5 === 0 ? 'bg-slate-955' : 'bg-transparent'
-                          }`}
-                        ></div>
-                      ))}
-                    </div>
-                  </div>
-                  <div className="w-10 h-10 bg-white dark:bg-slate-900 rounded-xl p-1 shadow border border-slate-50 dark:border-slate-800 z-10 flex items-center justify-center font-black text-[9px] text-indigo-600 dark:text-indigo-400">
-                    PIX
-                  </div>
+                {/* Visual QR code styled box */}
+                <div className="w-40 h-40 bg-white p-2 border border-slate-150 dark:border-slate-800 rounded-2xl mx-auto flex items-center justify-center relative shadow-sm">
+                  <img
+                    src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(pixModalCopiaCola)}`}
+                    alt="QR Code Pix"
+                    className="w-36 h-36 object-contain"
+                    referrerPolicy="no-referrer"
+                  />
                 </div>
 
                 {/* Copia e cola code copy box */}

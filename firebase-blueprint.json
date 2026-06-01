@@ -29,7 +29,10 @@
         "valorLocacao": { "type": "number", "description": "Preço padrão de locação diária" },
         "descricao": { "type": "string", "description": "Detalhamento e infraestrutura livre" },
         "fotos": { "type": "array", "description": "Lista de imagens de visualização" },
-        "status": { "type": "string", "enum": ["Ativo", "Inativo"], "description": "Status operacional do espaço" }
+        "status": { "type": "string", "enum": ["Ativo", "Inativo"], "description": "Status operacional do espaço" },
+        "taxaLimpeza": { "type": "number", "description": "Taxa de limpeza do espaço" },
+        "taxaCancelamento": { "type": "number", "description": "Porcentagem de taxa de cancelamento do espaço" },
+        "porcentagemSinal": { "type": "number", "description": "Porcentagem de sinal padrão para reserva (default: 50%)" }
       },
       "required": ["id", "nome", "capacidade", "valorLocacao", "descricao", "status"]
     },

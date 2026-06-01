@@ -38,11 +38,21 @@ export default function App() {
 
   useEffect(() => {
     const handleHashChange = () => {
-      setIsPublicBooking(window.location.hash === '#reserva' || window.location.search.includes('reserva=true'));
+      const hash = window.location.hash;
+      const search = window.location.search;
+      setIsPublicBooking(
+        hash.startsWith('#reserva') || 
+        search.includes('reserva=true') || 
+        search.includes('booking=')
+      );
     };
     handleHashChange();
     window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    window.addEventListener('popstate', handleHashChange);
+    return () => {
+      window.removeEventListener('hashchange', handleHashChange);
+      window.removeEventListener('popstate', handleHashChange);
+    };
   }, []);
 
   // Check ongoing sessions

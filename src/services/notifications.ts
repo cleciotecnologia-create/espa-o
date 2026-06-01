@@ -23,7 +23,7 @@ const DEFAULT_CONFIGS: NotifConfigs = {
   enableEmail: true,
   enableSms: true,
   simulationMode: true, // Defaults to sandbox simulation so it runs immediately
-  adminEmail: "clecioferreiracorretor@gmail.com",
+  adminEmail: "admin@eventspace.com.br",
   adminPhone: "+5511999999999",
   useCustomSmtp: false,
   smtpHost: "smtp.eventspace.com.br",
@@ -63,7 +63,7 @@ const INITIAL_NOTIFS: Notificacao[] = [
     id: "not_3",
     reservaId: "res_2",
     tipo: "Email",
-    destinatario: "clecioferreiracorretor@gmail.com",
+    destinatario: "admin@eventspace.com.br",
     assunto: "[ALERTA ERP] Pagamento Pendente - Rodrigo Mendes Vieira",
     mensagem: "Aviso do Sistema: A reserva para Confraternização no dia 05/06/2026 possui um pagamento de sinal atrasado no valor de R$ 2,000.00.",
     status: "Simulado",
@@ -75,8 +75,7 @@ const INITIAL_NOTIFS: Notificacao[] = [
 // Local state helpers
 function initLocalNotifs() {
   if (typeof window !== 'undefined') {
-    const stored = localStorage.getItem('es_notification_configs');
-    if (!stored || stored.includes('admin@eventspace.com.br')) {
+    if (!localStorage.getItem('es_notification_configs')) {
       localStorage.setItem('es_notification_configs', JSON.stringify(DEFAULT_CONFIGS));
     }
     if (!localStorage.getItem('es_notifications')) {

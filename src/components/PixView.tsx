@@ -51,6 +51,18 @@ export default function PixView({ preselectedBookingId }: PixViewProps) {
   const [paymentStatus, setPaymentStatus] = useState<'idle' | 'waiting' | 'confirmed'>('idle');
   const [countdown, setCountdown] = useState(5);
 
+  // Config States (Interactive dynamic configs inside PixView)
+  const [showConfig, setShowConfig] = useState(false);
+  const [pixKey, setPixKey] = useState(() => localStorage.getItem('cfg_pix_key') || '42.183.904/0001-82');
+  const [pixName, setPixName] = useState(() => localStorage.getItem('cfg_pix_name') || 'Holding EventSpace Administradora LTDA');
+  const [pixGateway, setPixGateway] = useState(() => localStorage.getItem('cfg_pix_gateway') || 'direto');
+  const [pixCity, setPixCity] = useState(() => localStorage.getItem('cfg_pix_city') || 'SAO PAULO');
+  const [pixKeyType, setPixKeyType] = useState(() => localStorage.getItem('cfg_pix_key_type') || 'cnpj');
+  const [pixClientId, setPixClientId] = useState(() => localStorage.getItem('cfg_pix_client_id') || '');
+  const [pixClientSecret, setPixClientSecret] = useState(() => localStorage.getItem('cfg_pix_client_secret') || '');
+  const [pixEnvironment, setPixEnvironment] = useState(() => localStorage.getItem('cfg_pix_environment') || 'sandbox');
+  const [pixToken, setPixToken] = useState(() => localStorage.getItem('cfg_pix_token') || '');
+
   useEffect(() => {
     loadPixData();
   }, [preselectedBookingId]);
@@ -96,15 +108,18 @@ export default function PixView({ preselectedBookingId }: PixViewProps) {
 
     const amount = getChargeAmount();
 
-    // Query credentials configured in Settings from localStorage
-    const savedKey = localStorage.getItem('cfg_pix_key') || '42.183.904/0001-82';
-    const savedName = localStorage.getItem('cfg_pix_name') || 'Holding EventSpace Administradora LTDA';
-    const savedCity = localStorage.getItem('cfg_pix_city') || 'SAO PAULO';
+    // Use interactive state values directly
+    let cleanKey = pixKey.trim();
+    // For CPF/CNPJ or pure numeric phone keys, remove non-digits for banking compatibility
+    const digitsOnly = cleanKey.replace(/\D/g, '');
+    if (digitsOnly.length === 11 || digitsOnly.length === 14 || (digitsOnly.length >= 10 && digitsOnly.length <= 13 && (cleanKey.startsWith('+') || !isNaN(Number(cleanKey.replace(/[+\s-]/g, '')))))) {
+      cleanKey = digitsOnly;
+    } else {
+      cleanKey = cleanKey.replace(/[^a-zA-Z0-9@.-]/g, '');
+    }
 
-    // Format PIX variables for standard EMV BR Code string
-    const cleanKey = savedKey.replace(/[^a-zA-Z0-9@.-]/g, '');
-    const cleanName = savedName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").slice(0, 25).toUpperCase();
-    const cleanCity = savedCity.normalize("NFD").replace(/[\u0300-\u036f]/g, "").slice(0, 15).toUpperCase();
+    const cleanName = pixName.normalize("NFD").replace(/[\u0300-\u036f]/g, "").slice(0, 25).toUpperCase();
+    const cleanCity = pixCity.normalize("NFD").replace(/[\u0300-\u036f]/g, "").slice(0, 15).toUpperCase();
 
     // Assemble dynamic BR Code / EMV block fields conform standard
     const pix_info = `0014br.gov.bcb.pix01${cleanKey.length.toString().padStart(2, '0')}${cleanKey}`;
@@ -117,9 +132,22 @@ export default function PixView({ preselectedBookingId }: PixViewProps) {
       `60${cleanCity.length.toString().padStart(2, '0')}${cleanCity}` +
       `62070503***6304`;
 
-    // Calculate simulated standard CRC16 checksum
-    const mockCRC = "A7D2";
-    const key = payloadStart + mockCRC;
+    // Dynamic Calculation of CRC16-CCITT (polynomial 0x1021, seed 0xFFFF, without reflection)
+    let crc = 0xFFFF;
+    const polynomial = 0x1021;
+    for (let i = 0; i < payloadStart.length; i++) {
+      const charCode = payloadStart.charCodeAt(i);
+      crc ^= (charCode << 8);
+      for (let j = 0; j < 8; j++) {
+        if ((crc & 0x8000) !== 0) {
+          crc = ((crc << 1) ^ polynomial) & 0xFFFF;
+        } else {
+          crc = (crc << 1) & 0xFFFF;
+        }
+      }
+    }
+    const finalCRC = crc.toString(16).toUpperCase().padStart(4, '0');
+    const key = payloadStart + finalCRC;
     
     setPixCopiaCola(key);
     setIsGenerated(true);
@@ -225,10 +253,21 @@ export default function PixView({ preselectedBookingId }: PixViewProps) {
     loadPixData();
   };
 
-  // Configured Gateway variables
-  const savedGateway = localStorage.getItem('cfg_pix_gateway') || 'direto';
-  const savedKey = localStorage.getItem('cfg_pix_key') || '42.183.904/0001-82';
-  const savedName = localStorage.getItem('cfg_pix_name') || 'Holding EventSpace Administradora LTDA';
+  const handleSaveConfig = () => {
+    localStorage.setItem('cfg_pix_key', pixKey);
+    localStorage.setItem('cfg_pix_name', pixName);
+    localStorage.setItem('cfg_pix_gateway', pixGateway);
+    localStorage.setItem('cfg_pix_city', pixCity);
+    localStorage.setItem('cfg_pix_key_type', pixKeyType);
+    localStorage.setItem('cfg_pix_client_id', pixClientId);
+    localStorage.setItem('cfg_pix_client_secret', pixClientSecret);
+    localStorage.setItem('cfg_pix_environment', pixEnvironment);
+    localStorage.setItem('cfg_pix_token', pixToken);
+    
+    // Notify general style update which re-syncs state
+    window.dispatchEvent(new Event('brand-colors-updated'));
+    setShowConfig(false);
+  };
 
   const gatewayLabels: Record<string, string> = {
     direto: "Banco Central Direto (Estático)",
@@ -256,14 +295,209 @@ export default function PixView({ preselectedBookingId }: PixViewProps) {
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white leading-tight">Painel de Gateway PIX</h2>
           <p className="text-sm text-gray-500 dark:text-zinc-400">Gere cobranças dinâmicas sincronizadas em tempo real com conciliação automática bancária.</p>
         </div>
-        <div className="flex flex-col text-right h-full text-xs self-end">
-          <div className="bg-indigo-50 dark:bg-indigo-950/30 px-3.5 py-1.5 border border-indigo-200/50 dark:border-indigo-900/50 rounded-xl space-y-0.5 text-left md:text-right">
-            <span className="block text-[9px] text-indigo-500 dark:text-indigo-400 font-extrabold uppercase tracking-wider">Gateway Ativo de Cobrança:</span>
-            <span className="font-bold text-slate-800 dark:text-gray-100">{gatewayLabels[savedGateway] || gatewayLabels.direto}</span>
-            <span className="block text-[9px] text-slate-500 mt-0.5">Beneficiário: <strong className="font-semibold text-slate-700 dark:text-slate-300">{savedName}</strong></span>
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            id="toggle-pix-config-panel"
+            onClick={() => setShowConfig(!showConfig)}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-xl text-xs font-bold tracking-wide transition shadow-sm cursor-pointer"
+          >
+            <QrCode className="w-4 h-4 text-emerald-300 animate-pulse" />
+            <span>{showConfig ? 'Fechar Configurações (X)' : '⚙️ Configurar Pix Dinâmico'}</span>
+          </button>
+          
+          <div className="bg-indigo-50 dark:bg-indigo-950/30 px-3.5 py-1.5 border border-indigo-200/50 dark:border-indigo-900/55 rounded-xl space-y-0.5 text-left">
+            <span className="block text-[9px] text-indigo-500 dark:text-indigo-400 font-extrabold uppercase tracking-widest">Gateway Ativo:</span>
+            <span className="font-bold text-slate-800 dark:text-gray-105 text-xs">{gatewayLabels[pixGateway] || gatewayLabels.direto}</span>
           </div>
         </div>
       </div>
+
+      {/* Dynamic PIX Configuration Action Panel */}
+      {showConfig && (
+        <div id="pix-inline-config-panel" className="bg-white dark:bg-slate-900 border border-indigo-155 dark:border-indigo-900/60 p-6 rounded-2xl shadow-lg space-y-6 animate-scale-up">
+          <div className="flex items-center justify-between border-b border-gray-150 dark:border-slate-850 pb-3">
+            <div className="flex items-center gap-2">
+              <span className="p-1.5 bg-indigo-50 dark:bg-indigo-950/50 rounded-lg text-indigo-600 dark:text-indigo-400">
+                <QrCode className="w-5 h-5 text-indigo-60 e animate-spin-slow" />
+              </span>
+              <div>
+                <h3 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">Ajustes Rápidos de Faturamento PIX</h3>
+                <p className="text-[11px] text-slate-400">Insira suas chaves e configure seus bancos PSP de forma centralizada.</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Chave select and value */}
+            <div>
+              <label htmlFor="pix-config-key-type" className="block text-[10px] font-bold text-slate-500 dark:text-zinc-455 uppercase tracking-wider mb-1.5">Tipo da Chave Pix *</label>
+              <select
+                id="pix-config-key-type"
+                value={pixKeyType}
+                onChange={(e) => setPixKeyType(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-850 text-xs font-bold rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-505/20"
+              >
+                <option value="cnpj">CNPJ (Pessoa Jurídica)</option>
+                <option value="cpf">CPF (Pessoa Física)</option>
+                <option value="email">E-mail</option>
+                <option value="celular">Celular / Telefone</option>
+                <option value="aleatoria">Chave Aleatória (EVP)</option>
+              </select>
+            </div>
+
+            <div>
+              <label htmlFor="pix-config-key-val" className="block text-[10px] font-bold text-slate-500 dark:text-zinc-455 uppercase tracking-wider mb-1.5">Chave Pix de Destino *</label>
+              <input
+                id="pix-config-key-val"
+                type="text"
+                value={pixKey}
+                onChange={(e) => setPixKey(e.target.value)}
+                placeholder="Ex. 42.183.904/0001-82 ou pix@suasfestas.com"
+                className="w-full px-3.5 py-2 border border-gray-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-850 text-xs font-bold rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-505/20 font-mono"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="pix-config-name" className="block text-[10px] font-bold text-slate-500 dark:text-zinc-455 uppercase tracking-wider mb-1.5">Nome do Recebedor *</label>
+              <input
+                id="pix-config-name"
+                type="text"
+                value={pixName}
+                onChange={(e) => setPixName(e.target.value)}
+                maxLength={25}
+                placeholder="Ex. Holding EventSpace"
+                className="w-full px-3.5 py-2 border border-gray-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-850 text-xs font-bold rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-505/20"
+              />
+              <span className="text-[10px] text-gray-400 block mt-0.5">Máximo 25 caracteres para compatibilidade técnica BR Code.</span>
+            </div>
+
+            <div>
+              <label htmlFor="pix-config-city" className="block text-[10px] font-bold text-slate-500 dark:text-zinc-455 uppercase tracking-wider mb-1.5">Cidade (Padrão Bacen) *</label>
+              <input
+                id="pix-config-city"
+                type="text"
+                value={pixCity}
+                onChange={(e) => setPixCity(e.target.value)}
+                maxLength={15}
+                placeholder="Ex. SAO PAULO"
+                className="w-full px-3.5 py-2 border border-gray-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-850 text-xs font-bold rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-505/20 font-mono"
+              />
+              <span className="text-[10px] text-gray-400 block mt-0.5 font-mono font-semibold">Sem acentos, no máximo 15 letras.</span>
+            </div>
+
+            {/* Gateway selection */}
+            <div className="md:col-span-2">
+              <label htmlFor="pix-config-gateway" className="block text-[10px] font-bold text-slate-500 dark:text-zinc-455 uppercase tracking-wider mb-1.5">Gateway / API Provedora *</label>
+              <select
+                id="pix-config-gateway"
+                value={pixGateway}
+                onChange={(e) => setPixGateway(e.target.value)}
+                className="w-full px-3 py-2 border border-gray-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-850 text-xs font-bold rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-505/20"
+              >
+                <option value="direto">Banco Central Direto (Sem taxas - Estático Assinado)</option>
+                <option value="mercadopago">Mercado Pago (Conciliação automática webhook)</option>
+                <option value="asaas">Asaas (Gateway de faturamento instantâneo com webhook nativo)</option>
+                <option value="efi">Efí Bank / Gerencianet (Official Pix API)</option>
+                <option value="pagseguro">PagSeguro API</option>
+              </select>
+            </div>
+
+            {/* Client ID / secret inputs for dynamic integrations */}
+            {pixGateway !== 'direto' && (
+              <div className="md:col-span-2 bg-slate-50 dark:bg-slate-950 p-4 rounded-xl border border-slate-200 dark:border-slate-800 grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <span className="block text-[10px] font-black text-slate-450 dark:text-zinc-500 uppercase tracking-widest mb-1.5">Ambiente de Operação</span>
+                  <div className="flex gap-6">
+                    <label className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-bold cursor-pointer">
+                      <input
+                        type="radio"
+                        name="inlineEnv"
+                        value="sandbox"
+                        checked={pixEnvironment === 'sandbox'}
+                        onChange={() => setPixEnvironment('sandbox')}
+                        className="text-indigo-650 focus:ring-indigo-500"
+                      />
+                      <span>Homologação (Sandbox de Testes)</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 text-xs text-slate-700 dark:text-slate-300 font-bold cursor-pointer">
+                      <input
+                        type="radio"
+                        name="inlineEnv"
+                        value="production"
+                        checked={pixEnvironment === 'production'}
+                        onChange={() => setPixEnvironment('production')}
+                        className="text-indigo-650 focus:ring-indigo-500"
+                      />
+                      <span>Produção Real (Valores Reais)</span>
+                    </label>
+                  </div>
+                </div>
+
+                {pixGateway !== 'asaas' ? (
+                  <>
+                    <div>
+                      <label htmlFor="pix-config-clientid" className="block text-[10px] font-bold text-slate-500 dark:text-zinc-455 uppercase tracking-wider mb-1">Client ID *</label>
+                      <input
+                        id="pix-config-clientid"
+                        type="text"
+                        value={pixClientId}
+                        onChange={(e) => setPixClientId(e.target.value)}
+                        placeholder="Insira as credenciais oficiais do provedor"
+                        className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 bg-white dark:bg-slate-900 focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label htmlFor="pix-config-secret" className="block text-[10px] font-bold text-slate-400 dark:text-zinc-550 uppercase tracking-wider mb-1">Client Secret *</label>
+                      <input
+                        id="pix-config-secret"
+                        type="password"
+                        value={pixClientSecret}
+                        onChange={(e) => setPixClientSecret(e.target.value)}
+                        placeholder="••••••••••••••••••••••••"
+                        className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 bg-white dark:bg-slate-900 focus:outline-none"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div className="md:col-span-2">
+                    <label htmlFor="pix-config-token" className="block text-[10px] font-bold text-slate-500 dark:text-zinc-455 uppercase tracking-wider mb-1">Token de API Asaas *</label>
+                    <input
+                      id="pix-config-token"
+                      type="password"
+                      value={pixToken}
+                      onChange={(e) => setPixToken(e.target.value)}
+                      placeholder="Ex. $aae.Ym9sc2ZfZGV..."
+                      className="w-full px-3 py-2 text-xs rounded-lg border border-gray-300 bg-white dark:bg-slate-900 focus:outline-none font-mono"
+                    />
+                  </div>
+                )}
+                
+                <div className="md:col-span-2 text-[10px] text-gray-450 bg-white dark:bg-slate-900 px-3 py-2 rounded-lg border border-gray-150 dark:border-slate-800 leading-relaxed font-mono">
+                  <span className="font-extrabold text-indigo-500 block">Webhook Configurado no Integrador:</span>
+                  {window.location.origin}/api/pix/webhook?gateway={pixGateway}&env={pixEnvironment}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="flex justify-end gap-2 border-t border-gray-100 dark:border-slate-850 pt-4 font-sans">
+            <button
+              onClick={() => setShowConfig(false)}
+              className="px-4 py-2 bg-gray-100 dark:bg-slate-800 hover:bg-gray-250 text-gray-700 dark:text-zinc-350 text-xs font-bold rounded-xl transition cursor-pointer"
+            >
+              Cancelar
+            </button>
+            <button
+              id="btn-save-pix-inline"
+              onClick={handleSaveConfig}
+              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-750 text-white text-xs font-bold rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-md shadow-indigo-650/15 font-sans"
+            >
+              <Check className="w-3.5 h-3.5" />
+              <span>Salvar Parâmetros PIX</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       {bookings.length === 0 ? (
         <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-805 p-12 text-center rounded-2xl max-w-sm mx-auto">
@@ -393,25 +627,14 @@ export default function PixView({ preselectedBookingId }: PixViewProps) {
                 {paymentStatus === 'waiting' && (
                   <div className="space-y-4">
                     
-                    {/* Fake Visual QR code styled box */}
-                    <div className="w-48 h-48 bg-slate-50 dark:bg-slate-950 p-2.5 rounded-2xl border border-gray-200 dark:border-slate-800 mx-auto flex items-center justify-center relative shadow-inner">
-                      {/* Stylized vector simulation */}
-                      <div className="absolute inset-0 bg-indigo-50/10 backdrop-blur-[1px] flex flex-col justify-center items-center rounded-2xl">
-                        <div className="w-40 h-40 bg-indigo-600/5 dark:bg-indigo-500/5 grid grid-cols-12 gap-1 overflow-hidden p-1 rounded-lg border border-indigo-505">
-                          {/* Generated random blocks with loops to look like a barcode */}
-                          {Array.from({ length: 48 }).map((_, i) => (
-                            <div 
-                              key={i} 
-                              className={`h-4 rounded ${
-                                i % 3 === 0 ? 'bg-indigo-600' : i % 5 === 0 ? 'bg-slate-950' : 'bg-transparent'
-                              }`}
-                            ></div>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="w-10 h-10 bg-white rounded-lg p-1 animate-pulse border z-10 shadow flex items-center justify-center font-bold text-[10px] text-indigo-500">
-                        PIX
-                      </div>
+                    {/* Visual QR code styled box */}
+                    <div className="w-48 h-48 bg-white p-2.5 rounded-2xl border border-gray-200 dark:border-slate-800 mx-auto flex items-center justify-center relative shadow-sm">
+                      <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=${encodeURIComponent(pixCopiaCola)}`}
+                        alt="QR Code Pix"
+                        className="w-40 h-40 object-contain"
+                        referrerPolicy="no-referrer"
+                      />
                     </div>
 
                     {/* Copia e cola string */}
