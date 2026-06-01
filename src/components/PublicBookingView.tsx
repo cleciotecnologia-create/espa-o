@@ -16,6 +16,7 @@ import {
 } from '../services/db';
 import { Reserva, Cliente, Espaco, Pagamento } from '../types';
 import { getLessorConfigs } from '../services/notifications';
+import { formatCPFOrCNPJ, validateCPFOrCNPJ, formatPhone } from '../services/validation';
 import { 
   Calendar, 
   Users, 
@@ -38,11 +39,13 @@ import {
   DollarSign,
   Send,
   ChevronRight,
+  ChevronLeft,
   Info,
   ExternalLink,
   Lock,
   Printer,
-  FileSignature
+  FileSignature,
+  RefreshCw
 } from 'lucide-react';
 
 const isPdfFile = (src?: string) => {
@@ -70,12 +73,23 @@ export default function PublicBookingView() {
   const [tipoEvento, setTipoEvento] = useState('Casamento');
   const [dataEvento, setDataEvento] = useState('');
   const [horario, setHorario] = useState('08:00 - 18:00');
-  const [qtdConvidados, setQtdConvidados] = useState('200');
+  const [qtdConvidados, setQtdConvidados] = useState('80');
   const [observacoes, setObservacoes] = useState('');
   const [selectedSpaceId, setSelectedSpaceId] = useState('espaco_1');
 
   // New booking date status validation
   const [dateStatus, setDateStatus] = useState<'idle' | 'available' | 'busy'>('idle');
+
+  // Interactive Availability Calendar month/year navigation state
+  const [currentCalendarDate, setCurrentCalendarDate] = useState(new Date());
+
+  const nextCalendarMonth = () => {
+    setCurrentCalendarDate(new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth() + 1, 1));
+  };
+
+  const prevCalendarMonth = () => {
+    setCurrentCalendarDate(new Date(currentCalendarDate.getFullYear(), currentCalendarDate.getMonth() - 1, 1));
+  };
 
   // Checkout Flow for Newly Created Bookings
   const [viewState, setViewState] = useState<'form' | 'checkout' | 'success'>('form');
@@ -105,12 +119,20 @@ export default function PublicBookingView() {
   const [clientPixCopied, setClientPixCopied] = useState(false);
   const [clientPixReconciling, setClientPixReconciling] = useState(false);
   const [clientPaymentComplete, setClientPaymentComplete] = useState(false);
+  const [brandLogo, setBrandLogo] = useState(() => localStorage.getItem('cfg_brand_logo') || '');
 
   // View Contract Modal sheet
   const [showContractSheet, setShowContractSheet] = useState(false);
 
   useEffect(() => {
     loadExistingData();
+    const handleUpdate = () => {
+      setBrandLogo(localStorage.getItem('cfg_brand_logo') || '');
+    };
+    window.addEventListener('brand-colors-updated', handleUpdate);
+    return () => {
+      window.removeEventListener('brand-colors-updated', handleUpdate);
+    };
   }, []);
 
   // Helper parsing URL query string or Hash for target bookings
@@ -155,6 +177,7 @@ export default function PublicBookingView() {
       setSpaces(resS);
       setClients(resC);
       setPayments(resP);
+      setBrandLogo(localStorage.getItem('cfg_brand_logo') || '');
 
       // Check URL for direct lookup routing
       const urlBookingId = getBookingIdFromUrl();
@@ -188,41 +211,47 @@ export default function PublicBookingView() {
     if (!space) {
       return { rent: 450, cleaning: 50 };
     }
+
+    const evLower = (eventType || '').toLowerCase();
+    const isWeddingOrDebutante = 
+      evLower.includes('casamento') || 
+      evLower.includes('debutante') || 
+      evLower.includes('15 anos') || 
+      evLower.includes('boda');
+
+    const cleaningFee = space.taxaLimpeza !== undefined ? space.taxaLimpeza : 50;
+
+    if (isWeddingOrDebutante) {
+      return { rent: 800, cleaning: cleaningFee };
+    }
     
     if (spaceId === 'espaco_1' || space.nome?.includes('Tropical')) {
-      // 1. Pack Especial: Casamentos e Debutantes
-      const evLower = (eventType || '').toLowerCase();
-      if (
-        evLower.includes('casamento') || 
-        evLower.includes('debutante') || 
-        evLower.includes('15 anos') || 
-        evLower.includes('boda')
-      ) {
-        return { rent: 800, cleaning: 50 };
-      }
-      
       // 2. Diárias de Lazer based on date
       if (dateStr) {
         const d = new Date(dateStr + "T12:00:00");
         const day = d.getDay(); // 0 = Sunday, 6 = Saturday
         const isWeekend = day === 0 || day === 6;
         if (isWeekend) {
-          return { rent: 450, cleaning: 50 };
+          return { rent: 450, cleaning: cleaningFee };
         } else {
-          return { rent: 400, cleaning: 50 };
+          return { rent: 400, cleaning: cleaningFee };
         }
       }
       
-      return { rent: 450, cleaning: 50 };
+      return { rent: 450, cleaning: cleaningFee };
     }
     
     return {
       rent: space.valorLocacao,
-      cleaning: space.taxaLimpeza !== undefined ? space.taxaLimpeza : 50
+      cleaning: cleaningFee
     };
   };
 
   const getSignalPercent = () => {
+    const space = spaces.find(s => s.id === selectedSpaceId);
+    if (space && space.porcentagemSinal !== undefined) {
+      return space.porcentagemSinal / 100;
+    }
     const percentStr = localStorage.getItem('cfg_tax_percent') || '50';
     const num = Number(percentStr);
     return isNaN(num) ? 0.5 : num / 100;
@@ -235,14 +264,14 @@ export default function PublicBookingView() {
       return;
     }
     const alreadyOccupied = existingReservas.some(
-      r => r.dataEvento === dataEvento && r.status !== 'Cancelado'
+      r => r.dataEvento === dataEvento && (r.status === 'Confirmado' || r.status === 'Realizado') && r.espacoId === selectedSpaceId
     );
     if (alreadyOccupied) {
       setDateStatus('busy');
     } else {
       setDateStatus('available');
     }
-  }, [dataEvento, existingReservas]);
+  }, [dataEvento, existingReservas, selectedSpaceId]);
 
   // Countdown timer effect for newly created dynamic PIX signal simulation
   useEffect(() => {
@@ -251,8 +280,6 @@ export default function PublicBookingView() {
       timer = setTimeout(() => {
         setCountdown(prev => prev - 1);
       }, 1000);
-    } else if (viewState === 'checkout' && countdown === 0) {
-      handleCompletePayment();
     }
     return () => clearTimeout(timer);
   }, [viewState, countdown]);
@@ -333,10 +360,12 @@ ${client.nome} (LOCATÁRIO)`;
     const amString = amount.toFixed(2);
     const amount_info = `54${amString.length.toString().padStart(2, '0')}${amString}`;
     
+    // Generate a random dynamic transaction ID to prevent same-code issues
+    const randTxSuffix = Math.floor(100 + Math.random() * 900).toString(); // 3-digit random
     const payloadStart = `000201010212${merchant_info}520400005303986${amount_info}5802BR` +
       `59${cleanName.length.toString().padStart(2, '0')}${cleanName}` +
       `60${cleanCity.length.toString().padStart(2, '0')}${cleanCity}` +
-      `62070503***6304`;
+      `62070503${randTxSuffix}6304`;
 
     // Dynamic Calculation of CRC16-CCITT (polynomial 0x1021, seed 0xFFFF, without reflection)
     let crc = 0xFFFF;
@@ -356,10 +385,31 @@ ${client.nome} (LOCATÁRIO)`;
     return payloadStart + finalCRC;
   };
 
+  const handleRegenerateCheckoutPix = () => {
+    if (!createdBooking) return;
+    const key = generateDynamicPix(createdBooking.valorSinal);
+    setPixPayload(key);
+    setCountdown(60); // Reset timer to 60 seconds
+  };
+
   // Newly created booking auto-payment
   const handleCompletePayment = async () => {
     if (!createdBooking) return;
     try {
+      // Direct double booking check
+      const latestReservas = await getReservas();
+      const alreadyDoubleBooked = latestReservas.some(
+        r => r.dataEvento === createdBooking.dataEvento && 
+             r.espacoId === createdBooking.espacoId && 
+             (r.status === 'Confirmado' || r.status === 'Realizado') &&
+             r.id !== createdBooking.id
+      );
+
+      if (alreadyDoubleBooked) {
+        alert("Atenção: Esta data acabou de ser confirmada e faturada por outro cliente via Pix prioritário. Sua transação foi cancelada.");
+        return;
+      }
+
       const amount = createdBooking.valorSinal;
 
       // Save confirmed payment record
@@ -470,7 +520,7 @@ ${client.nome} (LOCATÁRIO)`;
       // 4. Generate PIX
       const key = generateDynamicPix(valorSinal);
       setPixPayload(key);
-      setCountdown(6); // 6 seconds mock simulation duration
+      setCountdown(60); // 60 seconds mock simulation duration
       setViewState('checkout');
     } catch (e: any) {
       alert("Houve um erro técnico ao registrar seu agendamento: " + e.message);
@@ -710,6 +760,39 @@ ${client.nome} (LOCATÁRIO)`;
 
   const lessor = getLessorConfigs();
 
+  // Days calculations for public interactive calendar
+  const year = currentCalendarDate.getFullYear();
+  const month = currentCalendarDate.getMonth();
+
+  const firstDayIndex = new Date(year, month, 1).getDay(); // Sunday is 0
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+  const daysArray: (Date | null)[] = [];
+  for (let i = 0; i < firstDayIndex; i++) {
+    daysArray.push(null);
+  }
+  for (let i = 1; i <= daysInMonth; i++) {
+    daysArray.push(new Date(year, month, i));
+  }
+
+  // Get localized month name
+  const calendarMonthLabel = currentCalendarDate.toLocaleDateString('pt-BR', { month: 'long', year: 'numeric' });
+
+  // Helper to check if a day is in the past
+  const isPastDate = (d: Date) => {
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    return d < today;
+  };
+
+  // Helper to format Date target to YYYY-MM-DD in a timezone-insensitive way
+  const getDayIsoString = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const dayNumeric = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${dayNumeric}`;
+  };
+
   return (
     <div className="min-h-screen bg-slate-50 dark:bg-slate-950 font-sans text-slate-800 dark:text-slate-100 selection:bg-indigo-600/10">
       
@@ -717,41 +800,59 @@ ${client.nome} (LOCATÁRIO)`;
       <nav className="bg-white dark:bg-slate-900 border-b border-slate-150 dark:border-slate-800/85 sticky top-0 z-45 transition-colors shadow-sm">
         <div className="max-w-5xl mx-auto px-4 py-3 sm:py-4 flex flex-col sm:flex-row justify-between items-center gap-3">
           <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center text-white font-black text-sm shadow shadow-orange-500/30">
-              ES
-            </div>
+            {brandLogo ? (
+              <img src={brandLogo} alt="Logo do Espaço" className="h-9 object-contain rounded-lg max-w-[150px]" referrerPolicy="no-referrer" />
+            ) : (
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-emerald-500 to-teal-600 flex items-center justify-center text-white font-black text-sm shadow shadow-emerald-500/30 font-sans">
+                ET
+              </div>
+            )}
             <div>
-              <span className="font-extrabold text-sm text-slate-900 dark:text-white uppercase tracking-wider block">EventSpace</span>
-              <span className="text-[9px] text-emerald-500 font-bold uppercase tracking-widest block leading-none">Canal Público de Autoatendimento</span>
+              <span className="font-extrabold text-sm text-slate-900 dark:text-white uppercase tracking-wider block">Espaço Tropical</span>
+              <span className="text-[9px] text-emerald-550 font-bold uppercase tracking-widest block leading-none">Canal Público de Autoatendimento</span>
             </div>
           </div>
           
-          {/* Header Tab Toggles */}
-          <div className="flex bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-0.5 rounded-xl text-xs font-bold leading-none">
+          {/* Header Tab Toggles & Admin Redirect */}
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="flex bg-slate-100 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 p-0.5 rounded-xl text-xs font-bold leading-none">
+              <button
+                onClick={() => {
+                  setActiveTab('novareserva');
+                  setViewState('form');
+                }}
+                className={`px-3 py-2 sm:px-4 sm:py-2.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer select-none ${
+                  activeTab === 'novareserva'
+                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm'
+                    : 'text-slate-450 hover:text-slate-800 dark:hover:text-zinc-200'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5 text-indigo-505" />
+                <span>Solicitar Locação</span>
+              </button>
+              <button
+                onClick={() => setActiveTab('meuacesso')}
+                className={`px-3 py-2 sm:px-4 sm:py-2.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer select-none ${
+                  activeTab === 'meuacesso'
+                    ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm'
+                    : 'text-slate-450 hover:text-slate-800 dark:hover:text-zinc-200'
+                }`}
+              >
+                <Lock className="w-3.5 h-3.5 text-amber-505" />
+                <span>Minha Reserva</span>
+              </button>
+            </div>
+
+            {/* Painel Administrativo ERP Redirect button */}
             <button
               onClick={() => {
-                setActiveTab('novareserva');
-                setViewState('form');
+                window.location.href = window.location.origin + window.location.pathname;
               }}
-              className={`px-4 py-2.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer select-none ${
-                activeTab === 'novareserva'
-                  ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm'
-                  : 'text-slate-450 hover:text-slate-800 dark:hover:text-zinc-200'
-              }`}
+              className="px-3 py-1.5 sm:py-2 rounded-xl bg-indigo-55/60 hover:bg-indigo-100 dark:bg-slate-900 dark:hover:bg-slate-850 text-indigo-605 dark:text-indigo-400 font-extrabold text-xs flex items-center gap-1.5 transition-all border border-indigo-250/20 dark:border-slate-800 cursor-pointer shadow-sm"
+              title="Ir para o Painel de Controle Administrativo (ERP)"
             >
-              <Sparkles className="w-3.5 h-3.5 text-indigo-505" />
-              <span>Solicitar Locação</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('meuacesso')}
-              className={`px-4 py-2.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer select-none ${
-                activeTab === 'meuacesso'
-                  ? 'bg-white dark:bg-slate-800 text-slate-900 dark:text-white shadow-sm'
-                  : 'text-slate-450 hover:text-slate-800 dark:hover:text-zinc-200'
-              }`}
-            >
-              <Lock className="w-3.5 h-3.5 text-amber-505" />
-              <span>Acessar Minha Reserva</span>
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-500" />
+              <span>Painel Administrativo</span>
             </button>
           </div>
         </div>
@@ -804,7 +905,7 @@ ${client.nome} (LOCATÁRIO)`;
                       Faça o pré-agendamento automático e reserve sua data preferida em poucos instantes. O pagamento de arras liquida a reserva de forma imediata na agenda administrativa.
                     </p>
                     <div className="flex flex-wrap gap-4 pt-1 text-[11px] font-mono font-bold text-slate-350">
-                      <div className="flex items-center gap-1"><Users className="w-3.5 h-3.5 text-indigo-400" /> Espaço p/ até {currentSelectedSpace?.capacidade || 350} convidados</div>
+                      <div className="flex items-center gap-1"><Users className="w-3.5 h-3.5 text-indigo-400" /> Espaço p/ até {currentSelectedSpace?.capacidade || 80} convidados</div>
                       <div className="flex items-center gap-1"><MapPin className="w-3.5 h-3.5 text-orange-400" /> Paisagismo & Pé Direito imponente</div>
                       <div className="flex items-center gap-1"><CheckCircle className="w-3.5 h-3.5 text-emerald-405" /> Taxa Limpeza: R$ {currentCleaningFee.toLocaleString('pt-BR')}</div>
                     </div>
@@ -863,8 +964,142 @@ ${client.nome} (LOCATÁRIO)`;
                   </div>
 
                   <div className="md:col-span-2">
+                    {/* INTERACTIVE AVAILABILITY CALENDAR */}
+                    <div className="border-t border-slate-100 dark:border-slate-850 pt-5 space-y-4">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                        <div>
+                          <h4 className="text-xs font-black uppercase text-slate-900 dark:text-white tracking-widest flex items-center gap-1.5 leading-none">
+                            <Calendar className="w-4 h-4 text-indigo-500" /> Calendário de Disponibilidade do Salão
+                          </h4>
+                          <p className="text-[10px] text-slate-400 dark:text-zinc-500 mt-1 leading-normal max-w-xl">
+                            As datas verdes estão livres! Clique para selecioná-la e segurá-la por até 24 horas na pauta oficial.
+                          </p>
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-2">
+                            <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase tracking-wider text-emerald-700 dark:text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-full border border-emerald-500/10">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                              Livre (Disponível)
+                            </span>
+                            <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase tracking-wider text-rose-700 dark:text-rose-400 bg-rose-500/10 px-2 py-0.5 rounded-full border border-rose-500/10">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500"></span>
+                              Ocupado
+                            </span>
+                            <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase tracking-wider text-indigo-700 dark:text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-full border border-indigo-500/10">
+                              <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                              Sua Escolha
+                            </span>
+                            <span className="inline-flex items-center gap-1 text-[9px] font-extrabold uppercase tracking-wider text-slate-500 bg-slate-100 dark:bg-slate-900 px-2 py-0.5 rounded-full border border-slate-200 dark:border-slate-800">
+                              <span className="w-1.5 h-1.5 rounded-full bg-slate-300 dark:bg-slate-700"></span>
+                              Passado / Bloqueado
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Month navigators */}
+                        <div className="flex items-center gap-1 self-end sm:self-auto bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 rounded-xl p-0.5 shadow-sm">
+                          <button
+                            type="button"
+                            onClick={prevCalendarMonth}
+                            className="p-1.5 hover:bg-slate-200/50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-lg cursor-pointer transition-all"
+                            title="Mês anterior"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                          </button>
+                          <span className="text-[10px] font-black text-slate-800 dark:text-white px-2.5 capitalize tracking-wide select-none min-w-[110px] text-center">
+                            {calendarMonthLabel}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={nextCalendarMonth}
+                            className="p-1.5 hover:bg-slate-200/50 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400 rounded-lg cursor-pointer transition-all"
+                            title="Próximo mês"
+                          >
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* The Calendar Grid */}
+                      <div className="bg-slate-50/50 dark:bg-slate-950/25 border border-slate-200/60 dark:border-slate-800/80 rounded-2xl p-4">
+                        {/* Weekday headers */}
+                        <div className="grid grid-cols-7 gap-1.5 text-center text-[9px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-zinc-500 font-mono mb-2 select-none">
+                          <span>Dom</span>
+                          <span>Seg</span>
+                          <span>Ter</span>
+                          <span>Qua</span>
+                          <span>Qui</span>
+                          <span>Sex</span>
+                          <span>Sáb</span>
+                        </div>
+
+                        {/* Days list */}
+                        <div className="grid grid-cols-7 gap-1.5">
+                          {daysArray.map((day, idx) => {
+                            if (!day) {
+                              return <div key={`empty-${idx}`} className="h-14 sm:h-16 bg-slate-500/5 dark:bg-slate-900/5 rounded-xl border border-dashed border-slate-200/10 dark:border-slate-800/20"></div>;
+                            }
+
+                            const labelIso = getDayIsoString(day);
+                            const isPast = isPastDate(day);
+                            const isBooked = existingReservas.some(
+                              r => r.espacoId === selectedSpaceId && r.dataEvento === labelIso && (r.status === 'Confirmado' || r.status === 'Realizado')
+                            );
+                            const isSelected = dataEvento === labelIso;
+
+                            let cellStyle = "";
+                            let statusLabel = "";
+                            let miniIcon: React.ReactNode = null;
+
+                            if (isPast) {
+                              cellStyle = "bg-slate-100/30 dark:bg-slate-950/10 border-slate-200/20 dark:border-slate-900/10 text-slate-400 dark:text-slate-600 cursor-not-allowed select-none opacity-40";
+                              statusLabel = "Fechado";
+                            } else if (isBooked) {
+                              cellStyle = "bg-rose-50/70 dark:bg-rose-955/10 border-rose-150 dark:border-rose-950/30 text-rose-600 dark:text-rose-400 cursor-not-allowed relative overflow-hidden shadow-inner-white";
+                              statusLabel = "Ocupado";
+                              miniIcon = <Lock className="w-2.5 h-2.5 text-rose-400/80 dark:text-rose-600/70" />;
+                            } else if (isSelected) {
+                              cellStyle = "bg-gradient-to-br from-indigo-600 to-violet-700 hover:from-indigo-600 hover:to-violet-700 text-white border-violet-600 select-none shadow-md shadow-indigo-600/20 dark:shadow-indigo-900/30 transform scale-[1.03] cursor-pointer ring-4 ring-indigo-500/15 font-black transition-all duration-200";
+                              statusLabel = "Escolhida";
+                              miniIcon = (
+                                <span className="inline-flex items-center justify-center w-3 h-3 bg-white/20 rounded-full">
+                                  <Check className="w-2 h-2 stroke-[3]" />
+                                </span>
+                              );
+                            } else {
+                              cellStyle = "bg-emerald-50 hover:bg-emerald-100/80 dark:bg-emerald-950/15 dark:hover:bg-emerald-900/25 border-emerald-200/80 dark:border-emerald-800/40 hover:border-emerald-500 dark:hover:border-emerald-500 text-emerald-800 dark:text-emerald-355 cursor-pointer shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200";
+                              statusLabel = "Livre";
+                              miniIcon = <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping" />;
+                            }
+
+                            return (
+                              <button
+                                key={`day-btn-${labelIso}`}
+                                type="button"
+                                disabled={isPast || isBooked}
+                                onClick={() => {
+                                  setDataEvento(labelIso);
+                                }}
+                                className={`h-14 sm:h-16 p-2 rounded-xl border flex flex-col justify-between text-left relative ${cellStyle}`}
+                              >
+                                <div className="flex items-center justify-between w-full">
+                                  <span className="text-[11px] font-black tracking-wide leading-none">
+                                    {day.getDate()}
+                                  </span>
+                                  {miniIcon}
+                                </div>
+                                <span className={`text-[7px] sm:text-[8px] font-black uppercase tracking-wider leading-none ${isPast || isBooked ? 'opacity-60' : isSelected ? 'text-white' : 'text-emerald-600 dark:text-emerald-400'}`}>
+                                  {statusLabel}
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="md:col-span-2">
                     {dateStatus === 'available' && (
-                      <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl leading-none flex items-center gap-2 text-emerald-605 dark:text-emerald-400 font-bold text-xs w-full">
+                      <div className="p-3.5 bg-emerald-500/10 border border-emerald-500/20 rounded-xl leading-none flex items-center gap-2 text-emerald-600 dark:text-emerald-400 font-bold text-xs w-full">
                         <CheckCircle className="w-4 h-4 text-emerald-500" />
                         <span>Espaço disponível para o dia {dataEvento.split('-').reverse().join('/')}! Garanta sua reserva antes de outras propostas.</span>
                       </div>
@@ -876,9 +1111,9 @@ ${client.nome} (LOCATÁRIO)`;
                       </div>
                     )}
                     {dateStatus === 'idle' && (
-                      <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-dashed border-slate-250 dark:border-slate-800 rounded-xl leading-none flex items-center gap-2 text-slate-450 font-semibold text-xs w-full">
+                      <div className="p-3 bg-slate-50 dark:bg-slate-950 border border-dashed border-slate-200 dark:border-slate-800 rounded-xl leading-none flex items-center gap-2 text-slate-400 font-semibold text-xs w-full">
                         <HelpCircle className="w-4 h-4" />
-                        <span>Insira uma data acima para que possamos checar os conflitos com nossa agenda administrativa.</span>
+                        <span>Escolha um dia livre no calendário de disponibilidade acima para prosseguir com seu agendamento.</span>
                       </div>
                     )}
                   </div>
@@ -921,14 +1156,24 @@ ${client.nome} (LOCATÁRIO)`;
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-extrabold text-slate-450 dark:text-zinc-500 uppercase tracking-widest mb-1.5">Quantidade de Convidados Estimada *</label>
+                    <label className="block text-[10px] font-extrabold text-slate-450 dark:text-zinc-500 uppercase tracking-widest mb-1.5 flex justify-between items-center">
+                      <span>Quantidade de Convidados Estimada *</span>
+                      <span className="text-[9px] text-amber-600 dark:text-amber-400 font-extrabold font-sans">No máx. 80 pessoas</span>
+                    </label>
                     <input
                       type="number"
                       required
                       min="1"
-                      max={currentSelectedSpace?.capacidade || 350}
+                      max={80}
                       value={qtdConvidados}
-                      onChange={(e) => setQtdConvidados(e.target.value)}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value) || 0;
+                        if (val > 80) {
+                          setQtdConvidados('80');
+                        } else {
+                          setQtdConvidados(e.target.value);
+                        }
+                      }}
                       className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold rounded-xl focus:outline-none font-mono"
                     />
                   </div>
@@ -970,7 +1215,7 @@ ${client.nome} (LOCATÁRIO)`;
                       required
                       placeholder="Ex: 000.000.000-00 / 00.000.000/0001-00"
                       value={cpf}
-                      onChange={(e) => setCpf(e.target.value)}
+                      onChange={(e) => setCpf(formatCPFOrCNPJ(e.target.value))}
                       className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold rounded-xl focus:outline-none font-mono"
                     />
                   </div>
@@ -982,7 +1227,7 @@ ${client.nome} (LOCATÁRIO)`;
                       required
                       placeholder="Ex: (11) 99123-4567"
                       value={telefone}
-                      onChange={(e) => setTelefone(e.target.value)}
+                      onChange={(e) => setTelefone(formatPhone(e.target.value))}
                       className="w-full px-3.5 py-2.5 bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-xs font-bold rounded-xl focus:outline-none font-mono"
                     />
                   </div>
@@ -1075,7 +1320,7 @@ ${client.nome} (LOCATÁRIO)`;
                     Ficha Pré-Agendada!
                   </h2>
                   <p className="text-[11px] text-slate-450 leading-normal max-w-xs mx-auto">
-                    Efetue o sinal de 30% via PIX para o faturamento imediato e bloqueio oficial da data em nossa agenda de reservas.
+                    Efetue o sinal de {createdBooking.valorTotal > 0 ? Math.round((createdBooking.valorSinal / createdBooking.valorTotal) * 100) : 50}% via PIX para o faturamento imediato e bloqueio oficial da data em nossa agenda de reservas.
                   </p>
                 </div>
 
@@ -1098,7 +1343,7 @@ ${client.nome} (LOCATÁRIO)`;
                     <strong className="text-slate-850 dark:text-slate-300">{createdBooking.tipoEvento}</strong>
                   </div>
                   <div className="flex justify-between items-center text-slate-500 border-t border-slate-150 dark:border-slate-800/60 pt-2 text-md">
-                    <span className="font-extrabold text-slate-800 dark:text-slate-200">SINAL DE ARRAS (30%):</span>
+                    <span className="font-extrabold text-slate-800 dark:text-slate-200 border-b border-dashed border-slate-205">SINAL DE ARRAS ({createdBooking.valorTotal > 0 ? Math.round((createdBooking.valorSinal / createdBooking.valorTotal) * 100) : 50}%):</span>
                     <span className="font-mono font-black text-indigo-600 dark:text-indigo-400 text-sm">
                       R$ {createdBooking.valorSinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
                     </span>
@@ -1146,12 +1391,43 @@ ${client.nome} (LOCATÁRIO)`;
                   </button>
                 </div>
 
-                {/* simulated reconciliation notifier */}
-                <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-3">
-                  <Loader2 className="w-4 h-4 text-amber-500 animate-spin flex-shrink-0 mt-0.5" />
-                  <div className="text-left leading-normal text-[11px]">
-                    <p className="font-extrabold text-amber-800 dark:text-amber-400">Verificando pagamento...</p>
-                    <p className="text-slate-450 mt-1">Nossa integração bancária conciliará seu depósito PIX em até <strong>{countdown} segundos</strong>.</p>
+                {/* Regenerate Button */}
+                <button
+                  type="button"
+                  onClick={handleRegenerateCheckoutPix}
+                  className="w-full py-2 px-3 bg-indigo-55 dark:bg-slate-950 hover:bg-indigo-100 dark:hover:bg-slate-850 text-indigo-600 dark:text-indigo-400 font-bold text-xs rounded-xl cursor-pointer transition flex items-center justify-center gap-1.5 border border-indigo-100 dark:border-slate-800"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Gerar Novo Código (Re-gerar PIX)</span>
+                </button>
+
+                 {/* simulated reconciliation notifier */}
+                 {countdown > 0 ? (
+                   <div className="p-3 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-start gap-3">
+                     <Loader2 className="w-4 h-4 text-amber-500 animate-spin flex-shrink-0 mt-0.5" />
+                     <div className="text-left leading-normal text-[11px]">
+                       <p className="font-extrabold text-amber-800 dark:text-amber-400">Verificando pagamento...</p>
+                       <p className="text-slate-450 mt-1">Nossa integração bancária conciliará seu depósito PIX em até <strong>{countdown} segundos</strong>.</p>
+                     </div>
+                   </div>
+                 ) : (
+                   <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl flex items-start gap-3">
+                     <span className="text-red-500 font-bold flex-shrink-0 mt-0.5">⚠️</span>
+                     <div className="text-left leading-normal text-[11px]">
+                       <p className="font-extrabold text-red-800 dark:text-red-400">Código PIX Expirado!</p>
+                       <p className="text-slate-450 mt-1">O prazo de conciliação bancária temporária encerrou. Clique em "Re-gerar PIX" para obter novo código, ou clique no botão abaixo para simular compesação manual.</p>
+                     </div>
+                   </div>
+                 )}
+
+                {/* 24h official hold check instruction banner */}
+                <div className="p-3.5 bg-indigo-50 dark:bg-indigo-950/40 border border-indigo-150 dark:border-indigo-900/40 rounded-xl flex items-start gap-3 text-left">
+                  <Clock className="w-4.5 h-4.5 text-indigo-500 flex-shrink-0 mt-0.5 animate-pulse" />
+                  <div className="leading-snug text-[11px]">
+                    <p className="font-black text-indigo-850 dark:text-indigo-400 uppercase tracking-wide">Pauta Garantida por 24 Horas</p>
+                    <p className="text-slate-500 dark:text-slate-400 mt-1">
+                      Este pré-agendamento registrou o bloqueio da data ({createdBooking.dataEvento.split('-').reverse().join('/')}) na pauta do salão sob o status <span className="font-bold text-amber-600 dark:text-amber-400">Aguardando sinal</span>. Esta prioridade é válida por até <strong>24 horas</strong>. Caso o sinal de faturamento não seja identificado no prazo, a data será liberada automaticamente.
+                    </p>
                   </div>
                 </div>
 

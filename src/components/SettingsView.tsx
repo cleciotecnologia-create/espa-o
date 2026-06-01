@@ -65,6 +65,8 @@ export default function SettingsView() {
   // Brand Identity Palettes states
   const [brandPrimary, setBrandPrimary] = useState(() => localStorage.getItem('cfg_brand_primary') || '#4f46e5');
   const [brandSecondary, setBrandSecondary] = useState(() => localStorage.getItem('cfg_brand_secondary') || '#f59e0b');
+  const [brandLogo, setBrandLogo] = useState(() => localStorage.getItem('cfg_brand_logo') || '');
+  const [logoUploading, setLogoUploading] = useState(false);
 
   // System users state
   const [systemUsers, setSystemUsers] = useState<SystemUser[]>([]);
@@ -204,11 +206,32 @@ export default function SettingsView() {
     setTimeout(() => setBackupMessage(null), 4000);
   };
 
-  const saveBrandIdentity = (primaryColor: string, secondaryColor: string) => {
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setLogoUploading(true);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const resultString = reader.result as string;
+      setBrandLogo(resultString);
+      setLogoUploading(false);
+      showToast('Logomarca carregada com sucesso! Clique em salvar para aplicar.');
+    };
+    reader.onerror = () => {
+      setLogoUploading(false);
+      showToast('Falha ao ler o arquivo de imagem.', 'error');
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const saveBrandIdentity = (primaryColor: string, secondaryColor: string, logoUrl: string) => {
     localStorage.setItem('cfg_brand_primary', primaryColor);
     localStorage.setItem('cfg_brand_secondary', secondaryColor);
+    localStorage.setItem('cfg_brand_logo', logoUrl);
     setBrandPrimary(primaryColor);
     setBrandSecondary(secondaryColor);
+    setBrandLogo(logoUrl);
 
     // Notify Layout elements in real-time
     window.dispatchEvent(new Event('brand-colors-updated'));
@@ -1111,12 +1134,70 @@ export default function SettingsView() {
                   </div>
                 </div>
               </div>
+
+              {/* Logomarca URL & Upload */}
+              <div className="space-y-3 pt-1">
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-550 uppercase tracking-tight mb-1">Logomarca do Espaço (URL ou Arquivo Local)</label>
+                  <input
+                    type="text"
+                    placeholder="Ex: https://link-da-imagem.com/logo.png"
+                    value={brandLogo}
+                    onChange={(e) => setBrandLogo(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-850 text-xs rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 mb-2"
+                  />
+                </div>
+
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                    <div className="w-full border-t border-slate-200 dark:border-slate-850" />
+                  </div>
+                  <div className="relative flex justify-center text-[9px] uppercase font-bold">
+                    <span className="bg-white dark:bg-slate-900 px-2 text-slate-400">ou faça upload</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3">
+                  <label className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 dark:border-slate-800 hover:border-indigo-500 dark:hover:border-indigo-500 hover:bg-slate-50/50 dark:hover:bg-slate-950/20 py-3.5 px-4 rounded-xl cursor-pointer transition-all gap-1 text-center group">
+                    <Upload className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-colors" />
+                    <span className="text-[10px] font-extrabold text-slate-600 dark:text-zinc-350 tracking-wide uppercase">
+                      {logoUploading ? "Lendo arquivo..." : "Escolher arquivo de Imagem"}
+                    </span>
+                    <span className="text-[8px] text-slate-400">PNG, JPG, JPEG ou SVG</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleLogoUpload}
+                      className="hidden"
+                      disabled={logoUploading}
+                    />
+                  </label>
+                  {brandLogo && (
+                    <button
+                      type="button"
+                      onClick={() => setBrandLogo('')}
+                      className="px-2.5 py-2 hover:bg-rose-50 dark:hover:bg-rose-950/20 border border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase text-rose-500 rounded-lg hover:border-rose-250 cursor-pointer transition-all"
+                      title="Remover Logomarca atual"
+                    >
+                      Remover
+                    </button>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 leading-normal">Essa logomarca será exibida nos cabeçalhos (Sidebar e Header) e na ficha pública de agendamentos.</p>
+              </div>
             </div>
 
             {/* Dynamic preview block */}
             <div className="p-3 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-200 dark:border-slate-800 space-y-2">
               <span className="block text-[9px] uppercase tracking-wider font-extrabold text-slate-400">Pré-visualização do Tema:</span>
               <div className="flex items-center gap-2">
+                {brandLogo ? (
+                  <img src={brandLogo} alt="Logo" className="h-6 object-contain mr-2 max-w-[100px]" referrerPolicy="no-referrer" />
+                ) : (
+                  <div className="w-6 h-6 rounded bg-gradient-to-tr from-amber-500 to-orange-600 flex items-center justify-center text-white font-bold text-[10px]">
+                    ES
+                  </div>
+                )}
                 <button
                   type="button"
                   className="px-3.5 py-1.5 rounded-lg text-white text-[11px] font-extrabold transition"
@@ -1137,12 +1218,12 @@ export default function SettingsView() {
             <div className="pt-2">
               <button
                 type="button"
-                onClick={() => saveBrandIdentity(brandPrimary, brandSecondary)}
+                onClick={() => saveBrandIdentity(brandPrimary, brandSecondary, brandLogo)}
                 className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold tracking-wide transition shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
                 style={{ backgroundColor: brandPrimary }}
               >
                 <Save className="w-3.5 h-3.5" />
-                Aplicar Paleta de Cores
+                Aplicar Paleta de Cores & Logo
               </button>
             </div>
           </div>

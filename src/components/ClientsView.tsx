@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { getClientes, saveCliente, deleteCliente, getReservas } from '../services/db';
-import { formatCPFOrCNPJ, validateCPFOrCNPJ } from '../services/validation';
+import { formatCPFOrCNPJ, validateCPFOrCNPJ, formatPhone } from '../services/validation';
 import { Cliente, Reserva } from '../types';
 import { Plus, Edit, Trash, Users, Search, X, Check, FileCheck, CircleDollarSign, Calendar } from 'lucide-react';
 
@@ -346,7 +346,7 @@ export default function ClientsView() {
                     required
                     placeholder="Ex: (11) 99999-9999"
                     value={telefone}
-                    onChange={(e) => setTelefone(e.target.value)}
+                    onChange={(e) => setTelefone(formatPhone(e.target.value))}
                     className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-gray-301 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-909 dark:text-white"
                   />
                 </div>
@@ -356,7 +356,7 @@ export default function ClientsView() {
                     type="tel"
                     placeholder="Ex: (11) 98888-8888"
                     value={whatsapp}
-                    onChange={(e) => setWhatsapp(e.target.value)}
+                    onChange={(e) => setWhatsapp(formatPhone(e.target.value))}
                     className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-gray-301 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-909 dark:text-white"
                   />
                 </div>

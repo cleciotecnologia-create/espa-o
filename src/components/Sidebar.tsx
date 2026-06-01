@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   LayoutDashboard, 
   Home, 
@@ -40,6 +40,17 @@ export default function Sidebar({
   onLogout,
   currentUser 
 }: SidebarProps) {
+  const [brandLogo, setBrandLogo] = useState(() => typeof window !== 'undefined' ? (localStorage.getItem('cfg_brand_logo') || '') : '');
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      setBrandLogo(localStorage.getItem('cfg_brand_logo') || '');
+    };
+    window.addEventListener('brand-colors-updated', handleUpdate);
+    return () => {
+      window.removeEventListener('brand-colors-updated', handleUpdate);
+    };
+  }, []);
   
   const menuItems = [
     { id: 'dashboard', label: 'Painel Geral', icon: LayoutDashboard },
@@ -60,13 +71,17 @@ export default function Sidebar({
     <aside id="sidebar-container" className="w-64 bg-white dark:bg-slate-950 border-r border-slate-200 dark:border-slate-900 flex flex-col justify-between text-slate-900 dark:text-slate-105 flex-shrink-0 transition-colors duration-200">
       {/* Brand Profile Header */}
       <div>
-        <div className="p-6 border-b border-slate-100 dark:border-slate-900 flex items-center gap-3">
-          <div className="w-8 h-8 rounded-lg bg-indigo-600 flex items-center justify-center font-extrabold text-white text-md shadow-sm">
-            E
-          </div>
+        <div className="p-6 border-b border-slate-100 dark:border-slate-900 flex items-center gap-3 font-sans">
+          {brandLogo ? (
+            <img src={brandLogo} alt="Logo" className="h-8 object-contain rounded-lg flex-shrink-0" referrerPolicy="no-referrer" />
+          ) : (
+            <div className="w-8 h-8 rounded-lg bg-emerald-600 flex items-center justify-center font-extrabold text-white text-md shadow-sm select-none flex-shrink-0">
+              T
+            </div>
+          )}
           <div>
-            <h1 className="text-xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-none">EventSpace</h1>
-            <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold tracking-widest uppercase">ERP SYSTEM</span>
+            <h1 className="text-lg font-extrabold tracking-tight text-slate-900 dark:text-white leading-none">Espaço Tropical</h1>
+            <span className="text-[9px] text-slate-400 dark:text-slate-500 font-bold tracking-widest uppercase">SISTEMA ERP</span>
           </div>
         </div>
 

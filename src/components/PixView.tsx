@@ -24,7 +24,8 @@ import {
   FileSpreadsheet, 
   Clock, 
   ArrowRight, 
-  AlertCircle 
+  AlertCircle,
+  RefreshCw
 } from 'lucide-react';
 
 interface PixViewProps {
@@ -127,10 +128,11 @@ export default function PixView({ preselectedBookingId }: PixViewProps) {
     const amString = amount.toFixed(2);
     const amount_info = `54${amString.length.toString().padStart(2, '0')}${amString}`;
     
+    const randTxSuffix = Math.floor(100 + Math.random() * 900).toString(); // 3-digit random
     const payloadStart = `000201010212${merchant_info}520400005303986${amount_info}5802BR` +
       `59${cleanName.length.toString().padStart(2, '0')}${cleanName}` +
       `60${cleanCity.length.toString().padStart(2, '0')}${cleanCity}` +
-      `62070503***6304`;
+      `62070503${randTxSuffix}6304`;
 
     // Dynamic Calculation of CRC16-CCITT (polynomial 0x1021, seed 0xFFFF, without reflection)
     let crc = 0xFFFF;
@@ -152,7 +154,7 @@ export default function PixView({ preselectedBookingId }: PixViewProps) {
     setPixCopiaCola(key);
     setIsGenerated(true);
     setPaymentStatus('waiting');
-    setCountdown(5);
+    setCountdown(60);
   };
 
   // Countdown effect to simulate banking notification trigger
@@ -652,6 +654,16 @@ export default function PixView({ preselectedBookingId }: PixViewProps) {
                         <span>Copiar</span>
                       </button>
                     </div>
+
+                    {/* Regenerate PIX Code */}
+                    <button
+                      type="button"
+                      onClick={handleGeneratePix}
+                      className="w-full max-w-sm mx-auto py-2 px-3 bg-indigo-50 dark:bg-slate-850 hover:bg-indigo-100 dark:hover:bg-slate-750 text-indigo-600 dark:text-indigo-400 font-bold text-xs rounded-xl cursor-pointer transition flex items-center justify-center gap-1.5 border border-slate-200 dark:border-slate-750"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5" />
+                      <span>Gerar Novo Código (Re-gerar PIX)</span>
+                    </button>
 
                     {/* Simulation Tick alert */}
                     <div className="p-4 bg-amber-50 dark:bg-amber-955/20 border border-amber-250/30 rounded-xl leading-relaxed max-w-sm mx-auto flex items-start gap-3">

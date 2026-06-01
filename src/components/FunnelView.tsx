@@ -27,7 +27,7 @@ import {
   DollarSign
 } from 'lucide-react';
 import { getClientes, getEspacos, saveCliente, saveReserva, saveContrato, addActivityLog, getReservas } from '../services/db';
-import { formatCPFOrCNPJ, validateCPFOrCNPJ } from '../services/validation';
+import { formatCPFOrCNPJ, validateCPFOrCNPJ, formatPhone } from '../services/validation';
 import { getLessorConfigs, triggerPaymentNotification, triggerContractNotification } from '../services/notifications';
 import { WebhookHandler, WebhookPayload, WebhookHandlerResult } from '../services/webhookHandler';
 import { Cliente, Espaco, Reserva, Pagamento, Contrato } from '../types';
@@ -46,7 +46,7 @@ export default function FunnelView() {
   );
   const [selectedHour, setSelectedHour] = useState<string>('18:00 - 02:00');
   const [tipoEvento, setTipoEvento] = useState<string>('Casamento');
-  const [numQtdConvidados, setNumQtdConvidados] = useState<number>(150);
+  const [numQtdConvidados, setNumQtdConvidados] = useState<number>(80);
 
   // States for mandatory Client data (demanded at reservation level)
   const [clientNome, setClientNome] = useState<string>('');
@@ -75,9 +75,35 @@ export default function FunnelView() {
   const activeCliente = clientes.find(c => c.id === selectedClienteId);
   const activeEspaco = espacos.find(s => s.id === selectedEspacoId);
   
-  const estimatedTotal = activeEspaco ? activeEspaco.valorLocacao : 2500;
+  // Dynamic formula for estimated total based on space, event type, and date rules
+  let estimatedTotal = 2500;
+  if (activeEspaco) {
+    const cleaningFee = activeEspaco.taxaLimpeza !== undefined ? activeEspaco.taxaLimpeza : 50;
+    const evLower = (tipoEvento || '').toLowerCase();
+    const isWeddingOrDebutante = 
+      evLower.includes('casamento') || 
+      evLower.includes('debutante') || 
+      evLower.includes('15 anos') || 
+      evLower.includes('boda');
+
+    if (isWeddingOrDebutante) {
+      estimatedTotal = 800 + cleaningFee;
+    } else if (activeEspaco.id === 'espaco_1' || activeEspaco.nome?.includes('Tropical')) {
+      if (selectedDate) {
+        const d = new Date(selectedDate + "T12:00:00");
+        const day = d.getDay(); // 0 = Sunday, 6 = Saturday
+        const isWeekend = day === 0 || day === 6;
+        estimatedTotal = (isWeekend ? 450 : 400) + cleaningFee;
+      } else {
+        estimatedTotal = 450 + cleaningFee;
+      }
+    } else {
+      estimatedTotal = activeEspaco.valorLocacao + cleaningFee;
+    }
+  }
+
   const pct = activeEspaco && activeEspaco.porcentagemSinal !== undefined ? activeEspaco.porcentagemSinal : 50;
-  const estimatedSignal = estimatedTotal * (pct / 100);
+  const estimatedSignal = Math.round(estimatedTotal * (pct / 100));
 
   // Toast status feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -630,11 +656,23 @@ Documento assinado digitalmente via módulo integrado EventSpace ERP.`;
               </div>
 
               <div>
-                <label className="block text-slate-400 uppercase tracking-widest mb-1 font-sans">Qtd. Convidados</label>
+                <label className="block text-slate-400 uppercase tracking-widest mb-1 font-sans flex justify-between items-center">
+                  <span>Qtd. Convidados</span>
+                  <span className="text-[9px] text-amber-600 dark:text-amber-400 font-extrabold">Máx. 80</span>
+                </label>
                 <input
                   type="number"
+                  min="1"
+                  max="80"
                   value={numQtdConvidados}
-                  onChange={(e) => setNumQtdConvidados(Number(e.target.value))}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    if (val > 80) {
+                      setNumQtdConvidados(80);
+                    } else {
+                      setNumQtdConvidados(val);
+                    }
+                  }}
                   disabled={currentStep > 1}
                   className="w-full px-3 py-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white font-mono"
                 />
@@ -702,7 +740,7 @@ Documento assinado digitalmente via módulo integrado EventSpace ERP.`;
                     <input
                       type="text"
                       value={clientTelefone}
-                      onChange={(e) => setClientTelefone(e.target.value)}
+                      onChange={(e) => setClientTelefone(formatPhone(e.target.value))}
                       disabled={currentStep > 1}
                       placeholder="(24) 99999-5555"
                       className="w-full px-3 py-2 border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-900 dark:text-white rounded-lg outline-none font-mono"

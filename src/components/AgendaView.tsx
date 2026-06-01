@@ -15,6 +15,7 @@ import {
   addActivityLog
 } from '../services/db';
 import { Reserva, Espaco, Cliente, StatusReserva } from '../types';
+import { formatCPFOrCNPJ, formatPhone } from '../services/validation';
 import { 
   triggerPaymentNotification
 } from '../services/notifications';
@@ -37,7 +38,8 @@ import {
   Loader2,
   ShieldCheck,
   QrCode,
-  Download
+  Download,
+  RefreshCw
 } from 'lucide-react';
 
 export default function AgendaView() {
@@ -78,23 +80,48 @@ export default function AgendaView() {
   const [formSpaceId, setFormSpaceId] = useState('');
   const [formTipoEvento, setFormTipoEvento] = useState('Casamento');
   const [formHorario, setFormHorario] = useState('08:00 - 18:00');
-  const [formQtdConvidados, setFormQtdConvidados] = useState(150);
+  const [formQtdConvidados, setFormQtdConvidados] = useState(80);
   const [formValorTotal, setFormValorTotal] = useState(0);
   const [formValorSinal, setFormValorSinal] = useState(0);
   const [formStatus, setFormStatus] = useState<StatusReserva>('Aguardando sinal');
   const [formObservacoes, setFormObservacoes] = useState('');
 
-  // Auto update valorLocacao in reservation form when space is selected
+  // Auto update valorLocacao in reservation form when space or event type is selected
   useEffect(() => {
-    if (formSpaceId) {
+    if (formSpaceId && !editingBooking) {
       const sp = spaces.find(s => s.id === formSpaceId);
       if (sp) {
-        setFormValorTotal(sp.valorLocacao);
+        let baseRent = sp.valorLocacao;
+        const cleaningFee = sp.taxaLimpeza !== undefined ? sp.taxaLimpeza : 50;
+
+        const evLower = (formTipoEvento || '').toLowerCase();
+        const isWeddingOrDebutante = 
+          evLower.includes('casamento') || 
+          evLower.includes('debutante') || 
+          evLower.includes('15 anos') || 
+          evLower.includes('boda');
+
+        if (isWeddingOrDebutante) {
+          baseRent = 800;
+        } else if (sp.id === 'espaco_1' || sp.nome?.includes('Tropical')) {
+          // Normal daily rate based on day of week
+          if (selectedDayISO) {
+            const d = new Date(selectedDayISO + "T12:00:00");
+            const day = d.getDay(); // 0 = Sunday, 6 = Saturday
+            const isWeekend = day === 0 || day === 6;
+            baseRent = isWeekend ? 450 : 400;
+          } else {
+            baseRent = 450;
+          }
+        }
+
+        const totalWithFee = baseRent + cleaningFee;
+        setFormValorTotal(totalWithFee);
         const pct = sp.porcentagemSinal !== undefined ? sp.porcentagemSinal : 50;
-        setFormValorSinal(Math.round(sp.valorLocacao * (pct / 100)));
+        setFormValorSinal(Math.round(totalWithFee * (pct / 100)));
       }
     }
-  }, [formSpaceId, spaces]);
+  }, [formSpaceId, formTipoEvento, selectedDayISO, spaces, editingBooking]);
 
   // Countdown timer effect for immediate PIX simulation
   useEffect(() => {
@@ -104,8 +131,6 @@ export default function AgendaView() {
         timer = setTimeout(() => {
           setPixModalCountdown(prev => prev - 1);
         }, 1000);
-      } else {
-        handleConfirmPixModalPayment();
       }
     }
     return () => clearTimeout(timer);
@@ -134,10 +159,11 @@ export default function AgendaView() {
     const amString = amount.toFixed(2);
     const amount_info = `54${amString.length.toString().padStart(2, '0')}${amString}`;
     
+    const randTxSuffix = Math.floor(100 + Math.random() * 900).toString(); // 3-digit random
     const payloadStart = `000201010212${merchant_info}520400005303986${amount_info}5802BR` +
       `59${cleanName.length.toString().padStart(2, '0')}${cleanName}` +
       `60${cleanCity.length.toString().padStart(2, '0')}${cleanCity}` +
-      `62070503***6304`;
+      `62070503${randTxSuffix}6304`;
 
     // Dynamic Calculation of CRC16-CCITT (polynomial 0x1021, seed 0xFFFF, without reflection)
     let crc = 0xFFFF;
@@ -159,7 +185,7 @@ export default function AgendaView() {
     setPixModalCopiaCola(key);
     setCreatedBookingForPix(booking);
     setPixModalStatus('waiting');
-    setPixModalCountdown(5);
+    setPixModalCountdown(60);
     setShowPixInstantModal(true);
   };
 
@@ -358,7 +384,7 @@ export default function AgendaView() {
       }
       setFormTipoEvento('Casamento');
       setFormHorario('08:00 - 18:00');
-      setFormQtdConvidados(150);
+      setFormQtdConvidados(80);
       setFormStatus('Orçamento');
       setFormObservacoes('');
 
@@ -445,6 +471,16 @@ export default function AgendaView() {
       return;
     }
 
+    // Validação de capacidade máxima do espaço selecionado
+    const selectedSpace = spaces.find(s => s.id === formSpaceId);
+    if (selectedSpace) {
+      const maxCap = selectedSpace.capacidade || 80;
+      if (Number(formQtdConvidados) > maxCap) {
+        alert(`A quantidade de convidados (${formQtdConvidados}) excede a capacidade máxima permitida para o espaço "${selectedSpace.nome}" (máximo ${maxCap} pessoas).`);
+        return;
+      }
+    }
+
     const payload: Omit<Reserva, 'id' | 'createdAt'> & { id?: string } = {
       clienteId: targetClientId,
       espacoId: formSpaceId,
@@ -521,6 +557,23 @@ export default function AgendaView() {
         return 'bg-cyan-500 text-white';
       case 'Cancelado':
         return 'bg-slate-400 text-white line-through opacity-60';
+    }
+  };
+
+  const getStatusTooltip = (bStatus: StatusReserva) => {
+    switch (bStatus) {
+      case 'Orçamento':
+        return 'Orçamento: Evento pré-agendado providoriamente. O horário não está garantido de forma definitiva até o sinal.';
+      case 'Aguardando sinal':
+        return 'Aguardando Sinal: Proposta aceita, aguardando o pagamento de sinal (geralmente 50% ou 30%) para confirmação.';
+      case 'Confirmado':
+        return 'Confirmado: Sinal recebido com sucesso. Reserva ativa, data bloqueada no calendário e contrato em vigor.';
+      case 'Realizado':
+        return 'Realizado: O evento ocorreu e as chaves/espaço foram desocupados de forma bem-sucedida.';
+      case 'Cancelado':
+        return 'Cancelado: Reserva cancelada e data correspondente liberada no calendário para novos agendamentos.';
+      default:
+        return '';
     }
   };
 
@@ -608,7 +661,7 @@ export default function AgendaView() {
             <div className="grid grid-cols-7 gap-2">
               {daysArray.map((day, idx) => {
                 if (!day) {
-                  return <div key={`empty-${idx}`} className="h-24 bg-gray-50/50 dark:bg-slate-950/20 rounded-xl border border-gray-100/50 dark:border-slate-800/10"></div>;
+                  return <div key={`empty-${idx}`} className="h-24 bg-slate-550/5 dark:bg-slate-900/5 rounded-xl border border-dashed border-slate-200/5 dark:border-slate-800/10"></div>;
                 }
 
                 const dayIso = day.toISOString().split('T')[0];
@@ -620,30 +673,40 @@ export default function AgendaView() {
                     key={`day-${day.getDate()}`}
                     id={`calendar-day-${dayIso}`}
                     onClick={() => handleDayClick(day)}
-                    className={`h-24 p-2 rounded-xl border flex flex-col justify-between cursor-pointer transition-all ${
+                    className={`h-24 p-2.5 rounded-xl border flex flex-col justify-between cursor-pointer transition-all duration-200 transform hover:-translate-y-0.5 ${
                       hasBooking 
-                        ? 'border-indigo-150 bg-indigo-500/5 hover:bg-indigo-500/10 shadow-sm dark:border-slate-800' 
-                        : 'border-gray-100 dark:border-slate-850 bg-amber hover:border-indigo-400 dark:hover:border-indigo-500 hover:bg-gray-55/60 dark:hover:bg-slate-850/80'
+                        ? 'border-indigo-200 dark:border-indigo-900/50 bg-indigo-50/50 dark:bg-indigo-950/15 hover:bg-indigo-100/60 dark:hover:bg-indigo-950/25 shadow-sm hover:shadow' 
+                        : 'border-emerald-150 dark:border-emerald-900/30 bg-emerald-50/20 dark:bg-emerald-950/5 hover:border-emerald-400 dark:hover:border-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/15 shadow-sm hover:shadow'
                     }`}
                   >
                     {/* Day number header */}
-                    <span className="text-xs font-bold text-gray-900 dark:text-zinc-200 mt-0.5">
-                      {day.getDate()}
-                    </span>
+                    <div className="flex items-center justify-between w-full">
+                      <span className="text-xs font-black text-gray-950 dark:text-zinc-200">
+                        {day.getDate()}
+                      </span>
+                      {hasBooking && (
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
+                      )}
+                    </div>
 
                     {/* Booking indicator line */}
                     {hasBooking ? (
-                      dayBookings.map((b) => (
-                        <div
-                          key={b.id}
-                          className={`text-[9px] font-bold p-1 rounded-md leading-none truncate ${getStatusColor(b.status)}`}
-                          title={`${b.tipoEvento}`}
-                        >
-                          {b.tipoEvento}
-                        </div>
-                      ))
+                      <div className="space-y-1 w-full">
+                        {dayBookings.map((b) => (
+                          <div
+                            key={b.id}
+                            className={`text-[8.5px] font-black px-1.5 py-0.5 rounded-md leading-tight truncate shadow-sm cursor-help hover:scale-102 transition-transform ${getStatusColor(b.status)}`}
+                            title={`${b.tipoEvento} (${b.status}): ${getStatusTooltip(b.status)}`}
+                          >
+                            {b.tipoEvento}
+                          </div>
+                        ))}
+                      </div>
                     ) : (
-                      <span className="text-[9px] text-emerald-500 font-bold self-start uppercase select-none">Disponível</span>
+                      <div className="flex items-center gap-1 self-start bg-emerald-500/10 dark:bg-emerald-400/10 text-emerald-700 dark:text-emerald-405 text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-emerald-500/10">
+                        <span className="w-1 h-1 rounded-full bg-emerald-500 animate-ping"></span>
+                        Disponível
+                      </div>
                     )}
                   </div>
                 );
@@ -673,7 +736,10 @@ export default function AgendaView() {
                         >
                           <div className="flex justify-between items-center mb-1">
                             <span className="font-bold text-gray-900 dark:text-white truncate">{b.tipoEvento}</span>
-                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase ${getStatusColor(b.status)}`}>
+                            <span 
+                              className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase cursor-help hover:opacity-90 transition-opacity ${getStatusColor(b.status)}`}
+                              title={getStatusTooltip(b.status)}
+                            >
                               {b.status}
                             </span>
                           </div>
@@ -688,17 +754,21 @@ export default function AgendaView() {
 
             {/* Quick legenda status box */}
             <div className="border-t border-gray-100 dark:border-slate-800 pt-4 mt-4 space-y-2 text-[10px] text-gray-600 dark:text-zinc-400">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 cursor-help" title={getStatusTooltip('Realizado')}>
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 block"></span>
                 <span>Realizado / Desocupado</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 cursor-help" title={getStatusTooltip('Confirmado')}>
                 <span className="w-2.5 h-2.5 rounded-full bg-violet-500 block"></span>
                 <span>Confirmado / Pago</span>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="w-2.5 h-2.5 rounded-full bg-amber-400 block"></span>
-                <span>Pré-reservado (Orçamento)</span>
+              <div className="flex items-center gap-2 cursor-help" title={getStatusTooltip('Aguardando sinal')}>
+                <span className="w-2.5 h-2.5 rounded-full bg-amber-455 block bg-amber-400"></span>
+                <span>Aguardando Sinal</span>
+              </div>
+              <div className="flex items-center gap-2 cursor-help" title={getStatusTooltip('Orçamento')}>
+                <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 block"></span>
+                <span>Orçamento (Pré-reserva)</span>
               </div>
             </div>
           </div>
@@ -712,7 +782,10 @@ export default function AgendaView() {
           <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 p-6 rounded-2xl w-full max-w-md shadow-2xl animate-scale-up">
             <div className="flex justify-between items-start pb-3 border-b border-gray-100 dark:border-slate-800">
               <div>
-                <span className={`px-2.5 py-0.5 rounded-lg text-[9px] font-bold uppercase tracking-wider ${getStatusColor(selectedBookingForInspect.status)}`}>
+                <span 
+                  className={`px-2.5 py-0.5 rounded-lg text-[9px] font-bold uppercase tracking-wider cursor-help hover:opacity-90 transition-opacity ${getStatusColor(selectedBookingForInspect.status)}`}
+                  title={getStatusTooltip(selectedBookingForInspect.status)}
+                >
                   {selectedBookingForInspect.status}
                 </span>
                 <h3 className="text-md font-bold text-gray-900 dark:text-white mt-1.5 leading-none">
@@ -875,7 +948,7 @@ export default function AgendaView() {
                         required={registerNewClientOnFly}
                         placeholder="Ex: 000.000.000-00"
                         value={newClientCPF}
-                        onChange={(e) => setNewClientCPF(e.target.value)}
+                        onChange={(e) => setNewClientCPF(formatCPFOrCNPJ(e.target.value))}
                         className="w-full px-3.5 py-2 text-xs rounded-lg border border-gray-350 dark:border-slate-705 bg-white dark:bg-slate-800 text-gray-955 dark:text-white font-mono"
                       />
                     </div>
@@ -886,7 +959,7 @@ export default function AgendaView() {
                         required={registerNewClientOnFly}
                         placeholder="Ex: (11) 99321-0012"
                         value={newClientTelefone}
-                        onChange={(e) => setNewClientTelefone(e.target.value)}
+                        onChange={(e) => setNewClientTelefone(formatPhone(e.target.value))}
                         className="w-full px-3.5 py-2 text-xs rounded-lg border border-gray-350 dark:border-slate-705 bg-white dark:bg-slate-800 text-gray-955 dark:text-white font-mono"
                       />
                     </div>
@@ -950,13 +1023,24 @@ export default function AgendaView() {
               {/* Guests Count & Billing totals */}
               <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Convidados *</label>
+                  <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1 flex justify-between items-center">
+                    <span>Convidados *</span>
+                    <span className="text-[9px] text-amber-600 dark:text-amber-400 font-extrabold font-sans">Máx. 80</span>
+                  </label>
                   <input
                     type="number"
                     required
                     min={1}
+                    max={80}
                     value={formQtdConvidados}
-                    onChange={(e) => setFormQtdConvidados(Number(e.target.value))}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      if (val > 80) {
+                        setFormQtdConvidados(80);
+                      } else {
+                        setFormQtdConvidados(val);
+                      }
+                    }}
                     className="w-full px-2 py-2.5 text-sm rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-950 dark:text-white"
                   />
                 </div>
@@ -990,12 +1074,15 @@ export default function AgendaView() {
                   onChange={(e: any) => setFormStatus(e.target.value)}
                   className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-gray-350 dark:border-slate-705 bg-white dark:bg-slate-800 text-gray-900 dark:text-zinc-200 focus:outline-none focus:ring-1 focus:ring-indigo-500"
                 >
-                  <option value="Orçamento">Orçamento (Pré-reserva)</option>
-                  <option value="Aguardando sinal">Aguardando sinal</option>
-                  <option value="Confirmado">Confirmado (Reserva Ativa)</option>
-                  <option value="Realizado">Realizado</option>
-                  <option value="Cancelado">Cancelado</option>
+                  <option value="Orçamento" title={getStatusTooltip('Orçamento')}>Orçamento (Pré-reserva)</option>
+                  <option value="Aguardando sinal" title={getStatusTooltip('Aguardando sinal')}>Aguardando sinal</option>
+                  <option value="Confirmado" title={getStatusTooltip('Confirmado')}>Confirmado (Reserva Ativa)</option>
+                  <option value="Realizado" title={getStatusTooltip('Realizado')}>Realizado</option>
+                  <option value="Cancelado" title={getStatusTooltip('Cancelado')}>Cancelado</option>
                 </select>
+                <div className="mt-1.5 p-2 bg-slate-50 dark:bg-slate-950/60 rounded-lg text-[10px] text-zinc-550 dark:text-zinc-400 border border-slate-100 dark:border-slate-850/60 leading-normal">
+                  💡 <span className="font-extrabold capitalize">{formStatus}:</span> {getStatusTooltip(formStatus)}
+                </div>
               </div>
 
               {/* Notes */}
@@ -1129,14 +1216,34 @@ export default function AgendaView() {
                   </button>
                 </div>
 
-                {/* Simulation indicator block */}
-                <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl max-w-sm mx-auto flex items-start gap-3">
-                  <Loader2 className="w-4 h-4 text-amber-500 dark:text-amber-400 animate-spin flex-shrink-0" />
-                  <div className="text-left font-sans text-[11px] leading-snug">
-                    <p className="font-extrabold text-amber-800 dark:text-amber-450 leading-tight">Conciliando com Banco Central...</p>
-                    <p className="text-slate-400 mt-1">Sua liquidação simulada será confirmada automaticamente em <strong>{pixModalCountdown} segundos</strong>.</p>
-                  </div>
-                </div>
+                {/* Regenerate Button */}
+                <button
+                  type="button"
+                  onClick={() => createdBookingForPix && triggerPixModalForBooking(createdBookingForPix)}
+                  className="w-full max-w-sm mx-auto py-2 px-3 bg-indigo-50 dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-slate-750 text-indigo-650 dark:text-indigo-400 font-bold text-xs rounded-xl cursor-pointer transition flex items-center justify-center gap-1.5 border border-slate-200 dark:border-slate-700"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Gerar Novo Código (Re-gerar PIX)</span>
+                </button>
+
+                 {/* Simulation indicator block */}
+                 {pixModalCountdown > 0 ? (
+                   <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl max-w-sm mx-auto flex items-start gap-3">
+                     <Loader2 className="w-4 h-4 text-amber-500 dark:text-amber-400 animate-spin flex-shrink-0" />
+                     <div className="text-left font-sans text-[11px] leading-snug">
+                       <p className="font-extrabold text-amber-800 dark:text-amber-450 leading-tight">Conciliando com Banco Central...</p>
+                       <p className="text-slate-400 mt-1">Aguardando liquidação simulada. Chave ativa por mais <strong>{pixModalCountdown} segundos</strong>.</p>
+                     </div>
+                   </div>
+                 ) : (
+                   <div className="p-3.5 bg-red-500/10 border border-red-500/20 rounded-xl max-w-sm mx-auto flex items-start gap-3">
+                     <span className="text-red-500 font-bold flex-shrink-0">⚠️</span>
+                     <div className="text-left font-sans text-[11px] leading-snug">
+                       <p className="font-extrabold text-red-800 dark:text-red-450 leading-tight">Tempo Limite Excedido!</p>
+                       <p className="text-slate-400 mt-1">O prazo de conciliação bancária expirou. Clique em "Re-gerar PIX" para obter novo código, ou confirme manualmente abaixo.</p>
+                     </div>
+                   </div>
+                 )}
 
                 {/* Instant confirmation trigger button */}
                 <button

@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { getReservas, getClientes, getEspacos, saveReserva, deleteReserva, saveCliente, savePagamento, addActivityLog } from '../services/db';
 import { Reserva, Cliente, Espaco, StatusReserva } from '../types';
+import { formatCPFOrCNPJ, formatPhone } from '../services/validation';
 import { 
   triggerBookingConfirmation,
   triggerBookingCancellation,
@@ -31,7 +32,8 @@ import {
   Copy,
   Loader2,
   ShieldCheck,
-  Share2
+  Share2,
+  RefreshCw
 } from 'lucide-react';
 
 interface BookingsViewProps {
@@ -83,7 +85,7 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
   const [tipoEvento, setTipoEvento] = useState('Casamento');
   const [dataEvento, setDataEvento] = useState('');
   const [horario, setHorario] = useState('08:00 - 18:00');
-  const [qtdConvidados, setQtdConvidados] = useState(150);
+  const [qtdConvidados, setQtdConvidados] = useState(80);
   const [taxaLimpeza, setTaxaLimpeza] = useState(0);
   const [valorTotal, setValorTotal] = useState(0);
   const [valorSinal, setValorSinal] = useState(0);
@@ -94,27 +96,70 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
     loadAllBookings();
   }, [focusedBookingId]);
 
-  // Adjust form total valuations upon space select
+  // Adjust form total valuations upon space select, event type, or date
   useEffect(() => {
     if (spaceId && !editingBooking) {
       const sp = spaces.find(s => s.id === spaceId);
       if (sp) {
-        const fee = sp.taxaLimpeza !== undefined ? sp.taxaLimpeza : 250;
-        const pct = sp.porcentagemSinal !== undefined ? sp.porcentagemSinal : 50;
+        const fee = sp.taxaLimpeza !== undefined ? sp.taxaLimpeza : 50;
         setTaxaLimpeza(fee);
-        setValorTotal(sp.valorLocacao + fee);
-        setValorSinal(Math.round((sp.valorLocacao + fee) * (pct / 100)));
+
+        let baseRent = sp.valorLocacao;
+        const evLower = (tipoEvento || '').toLowerCase();
+        const isWeddingOrDebutante = 
+          evLower.includes('casamento') || 
+          evLower.includes('debutante') || 
+          evLower.includes('15 anos') || 
+          evLower.includes('boda');
+
+        if (isWeddingOrDebutante) {
+          baseRent = 800;
+        } else if (sp.id === 'espaco_1' || sp.nome?.includes('Tropical')) {
+          if (dataEvento) {
+            const d = new Date(dataEvento + "T12:00:00");
+            const day = d.getDay(); // 0 = Sunday, 6 = Saturday
+            const isWeekend = day === 0 || day === 6;
+            baseRent = isWeekend ? 450 : 400;
+          } else {
+            baseRent = 450;
+          }
+        }
+
+        const pct = sp.porcentagemSinal !== undefined ? sp.porcentagemSinal : 50;
+        setValorTotal(baseRent + fee);
+        setValorSinal(Math.round((baseRent + fee) * (pct / 100)));
       }
     }
-  }, [spaceId, spaces]);
+  }, [spaceId, tipoEvento, dataEvento, spaces, editingBooking]);
 
   const handleTaxaLimpezaChange = (val: number) => {
     setTaxaLimpeza(val);
     const sp = spaces.find(s => s.id === spaceId);
     if (sp) {
+      let baseRent = sp.valorLocacao;
+      const evLower = (tipoEvento || '').toLowerCase();
+      const isWeddingOrDebutante = 
+        evLower.includes('casamento') || 
+        evLower.includes('debutante') || 
+        evLower.includes('15 anos') || 
+        evLower.includes('boda');
+
+      if (isWeddingOrDebutante) {
+        baseRent = 800;
+      } else if (sp.id === 'espaco_1' || sp.nome?.includes('Tropical')) {
+        if (dataEvento) {
+          const d = new Date(dataEvento + "T12:00:00");
+          const day = d.getDay(); // 0 = Sunday, 6 = Saturday
+          const isWeekend = day === 0 || day === 6;
+          baseRent = isWeekend ? 450 : 400;
+        } else {
+          baseRent = 450;
+        }
+      }
+
       const pct = sp.porcentagemSinal !== undefined ? sp.porcentagemSinal : 50;
-      setValorTotal(sp.valorLocacao + val);
-      setValorSinal(Math.round((sp.valorLocacao + val) * (pct / 100)));
+      setValorTotal(baseRent + val);
+      setValorSinal(Math.round((baseRent + val) * (pct / 100)));
     }
   };
 
@@ -126,8 +171,6 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
         timer = setTimeout(() => {
           setPixModalCountdown(prev => prev - 1);
         }, 1000);
-      } else {
-        handleConfirmPixModalPayment();
       }
     }
     return () => clearTimeout(timer);
@@ -156,10 +199,11 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
     const amString = amount.toFixed(2);
     const amount_info = `54${amString.length.toString().padStart(2, '0')}${amString}`;
     
+    const randTxSuffix = Math.floor(100 + Math.random() * 900).toString(); // 3-digit random
     const payloadStart = `000201010212${merchant_info}520400005303986${amount_info}5802BR` +
       `59${cleanName.length.toString().padStart(2, '0')}${cleanName}` +
       `60${cleanCity.length.toString().padStart(2, '0')}${cleanCity}` +
-      `62070503***6304`;
+      `62070503${randTxSuffix}6304`;
 
     // Dynamic Calculation of CRC16-CCITT (polynomial 0x1021, seed 0xFFFF, without reflection)
     let crc = 0xFFFF;
@@ -181,7 +225,7 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
     setPixModalCopiaCola(key);
     setCreatedBookingForPix(booking);
     setPixModalStatus('waiting');
-    setPixModalCountdown(5);
+    setPixModalCountdown(60);
     setShowPixInstantModal(true);
   };
 
@@ -265,7 +309,7 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
     const today = new Date().toISOString().split('T')[0];
     setDataEvento(today);
     setHorario('08:00 - 18:00');
-    setQtdConvidados(150);
+    setQtdConvidados(80);
     setTaxaLimpeza(0);
     setStatus('Orçamento');
     setObservacoes('');
@@ -436,6 +480,23 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
     }
   };
 
+  const getStatusTooltip = (bStatus: StatusReserva) => {
+    switch (bStatus) {
+      case 'Orçamento':
+        return 'Orçamento: Evento pré-agendado provisoriamente. O horário não está garantido de forma definitiva até o sinal.';
+      case 'Aguardando sinal':
+        return 'Aguardando Sinal: Proposta aceita, aguardando o pagamento de sinal (geralmente 50% ou 30%) para confirmação.';
+      case 'Confirmado':
+        return 'Confirmado: Sinal recebido com sucesso. Reserva ativa, data bloqueada no calendário e contrato em vigor.';
+      case 'Realizado':
+        return 'Realizado: O evento ocorreu e as chaves/espaço foram desocupados de forma bem-sucedida.';
+      case 'Cancelado':
+        return 'Cancelado: Reserva cancelada e data correspondente liberada no calendário para novos agendamentos.';
+      default:
+        return '';
+    }
+  };
+
   return (
     <div className="space-y-6">
       
@@ -585,7 +646,10 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
 
                     {/* Status Badge */}
                     <td className="py-4 px-4">
-                      <span className={`px-2.5 py-1 rounded-lg text-[9px] font-bold border ${getStatusStyle(b.status)}`}>
+                      <span 
+                        className={`px-2.5 py-1 rounded-lg text-[9px] font-bold border cursor-help hover:opacity-90 transition-opacity ${getStatusStyle(b.status)}`}
+                        title={getStatusTooltip(b.status)}
+                      >
                         {b.status}
                       </span>
                     </td>
@@ -731,7 +795,7 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
                 ) : (
                   <div className="space-y-3 pt-2.5 border-t border-gray-200 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-3 pb-1">
                     <div className="sm:col-span-2">
-                      <label className="block text-[10px] font-bold text-gray-500 dark:text-zinc-400 uppercase tracking-wider mb-1">Nome Completo *</label>
+                      <label className="block text-[10px] font-bold text-gray-500 dark:text-zinc-400 tracking-wider uppercase mb-1">Nome Completo *</label>
                       <input
                         type="text"
                         required={registerNewClientOnFly}
@@ -742,29 +806,29 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-gray-500 dark:text-zinc-400 uppercase tracking-wider mb-1">Documento (CPF ou CNPJ) *</label>
+                      <label className="block text-[10px] font-bold text-gray-500 dark:text-zinc-400 tracking-wider uppercase mb-1">Documento (CPF ou CNPJ) *</label>
                       <input
                         type="text"
                         required={registerNewClientOnFly}
                         placeholder="Ex: 000.000.000-00"
                         value={newClientCPF}
-                        onChange={(e) => setNewClientCPF(e.target.value)}
+                        onChange={(e) => setNewClientCPF(formatCPFOrCNPJ(e.target.value))}
                         className="w-full px-3.5 py-2 text-xs rounded-lg border border-gray-350 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-950 dark:text-white font-mono"
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-gray-500 dark:text-zinc-400 uppercase tracking-wider mb-1">WhatsApp / Celular *</label>
+                      <label className="block text-[10px] font-bold text-gray-500 dark:text-zinc-400 tracking-wider uppercase mb-1">WhatsApp / Celular *</label>
                       <input
                         type="text"
                         required={registerNewClientOnFly}
                         placeholder="Ex: (11) 99321-0012"
                         value={newClientTelefone}
-                        onChange={(e) => setNewClientTelefone(e.target.value)}
-                        className="w-full px-3.5 py-2 text-xs rounded-lg border border-gray-350 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-950 dark:text-white font-mono"
+                        onChange={(e) => setNewClientTelefone(formatPhone(e.target.value))}
+                        className="w-full px-3.5 py-2 text-xs rounded-lg border border-gray-350 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-955 dark:text-white font-mono"
                       />
                     </div>
                     <div className="sm:col-span-2">
-                      <label className="block text-[10px] font-bold text-gray-500 dark:text-zinc-400 uppercase tracking-wider mb-1">E-mail Corporativo / Faturamento *</label>
+                      <label className="block text-[10px] font-bold text-gray-500 dark:text-zinc-400 tracking-wider uppercase mb-1">E-mail Corporativo / Faturamento *</label>
                       <input
                         type="email"
                         required={registerNewClientOnFly}
@@ -832,13 +896,24 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Quantidade de Convidados *</label>
+                  <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1 flex justify-between items-center">
+                    <span>Quantidade de Convidados *</span>
+                    <span className="text-[9px] text-amber-600 dark:text-amber-400 font-extrabold font-sans">No máx. 80</span>
+                  </label>
                   <input
                     type="number"
                     required
                     min={1}
+                    max={80}
                     value={qtdConvidados}
-                    onChange={(e) => setQtdConvidados(Number(e.target.value))}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      if (val > 80) {
+                        setQtdConvidados(80);
+                      } else {
+                        setQtdConvidados(val);
+                      }
+                    }}
                     className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-950 dark:text-white"
                   />
                 </div>
@@ -895,12 +970,15 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
                   onChange={(e: any) => setStatus(e.target.value)}
                   className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-zinc-200 focus:outline-none"
                 >
-                  <option value="Orçamento">Orçamento</option>
-                  <option value="Aguardando sinal">Aguardando sinal</option>
-                  <option value="Confirmado">Confirmado</option>
-                  <option value="Realizado">Realizado</option>
-                  <option value="Cancelado">Cancelado</option>
+                  <option value="Orçamento" title={getStatusTooltip('Orçamento')}>Orçamento</option>
+                  <option value="Aguardando sinal" title={getStatusTooltip('Aguardando sinal')}>Aguardando sinal</option>
+                  <option value="Confirmado" title={getStatusTooltip('Confirmado')}>Confirmado</option>
+                  <option value="Realizado" title={getStatusTooltip('Realizado')}>Realizado</option>
+                  <option value="Cancelado" title={getStatusTooltip('Cancelado')}>Cancelado</option>
                 </select>
+                <div className="mt-1.5 p-2 bg-slate-50 dark:bg-slate-950/60 rounded-lg text-[10px] text-zinc-550 dark:text-zinc-400 border border-slate-100 dark:border-slate-850/60 leading-normal font-sans">
+                  💡 <span className="font-extrabold capitalize">{status}:</span> {getStatusTooltip(status)}
+                </div>
               </div>
 
               {/* Obs */}
@@ -1034,14 +1112,34 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
                   </button>
                 </div>
 
-                {/* Simulation indicator block */}
-                <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl max-w-sm mx-auto flex items-start gap-3">
-                  <Loader2 className="w-4 h-4 text-amber-500 dark:text-amber-400 animate-spin flex-shrink-0" />
-                  <div className="text-left font-sans text-[11px] leading-snug">
-                    <p className="font-extrabold text-amber-800 dark:text-amber-450 leading-tight">Conciliando com Banco Central...</p>
-                    <p className="text-slate-400 mt-1">Sua liquidação simulada será confirmada automaticamente em <strong>{pixModalCountdown} segundos</strong>.</p>
-                  </div>
-                </div>
+                {/* Regenerate Button */}
+                <button
+                  type="button"
+                  onClick={() => createdBookingForPix && triggerPixModalForBooking(createdBookingForPix)}
+                  className="w-full max-w-sm mx-auto py-2 px-3 bg-indigo-50 dark:bg-slate-800 hover:bg-indigo-100 dark:hover:bg-slate-750 text-indigo-650 dark:text-indigo-400 font-bold text-xs rounded-xl cursor-pointer transition flex items-center justify-center gap-1.5 border border-slate-200 dark:border-slate-700"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Gerar Novo Código (Re-gerar PIX)</span>
+                </button>
+
+                 {/* Simulation indicator block */}
+                 {pixModalCountdown > 0 ? (
+                   <div className="p-3.5 bg-amber-500/10 border border-amber-500/20 rounded-xl max-w-sm mx-auto flex items-start gap-3">
+                     <Loader2 className="w-4 h-4 text-amber-500 dark:text-amber-400 animate-spin flex-shrink-0" />
+                     <div className="text-left font-sans text-[11px] leading-snug">
+                       <p className="font-extrabold text-amber-800 dark:text-amber-450 leading-tight">Conciliando com Banco Central...</p>
+                       <p className="text-slate-400 mt-1">Aguardando liquidação simulada. Chave ativa por mais <strong>{pixModalCountdown} segundos</strong>.</p>
+                     </div>
+                   </div>
+                 ) : (
+                   <div className="p-3.5 bg-red-500/10 border border-red-500/20 rounded-xl max-w-sm mx-auto flex items-start gap-3">
+                     <span className="text-red-500 font-bold flex-shrink-0">⚠️</span>
+                     <div className="text-left font-sans text-[11px] leading-snug">
+                       <p className="font-extrabold text-red-800 dark:text-red-450 leading-tight">Tempo Limite Excedido!</p>
+                       <p className="text-slate-400 mt-1">O prazo de conciliação bancária expirou. Clique em "Re-gerar PIX" para obter novo código, ou confirme manualmente abaixo.</p>
+                     </div>
+                   </div>
+                 )}
 
                 {/* Instant confirmation trigger button */}
                 <button

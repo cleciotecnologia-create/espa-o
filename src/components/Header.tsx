@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Search, Activity, FileSpreadsheet, Check, AlertCircle } from 'lucide-react';
+import { Search, Activity, FileSpreadsheet, Check, AlertCircle, ExternalLink } from 'lucide-react';
 import { getLogs, getClientes, getEspacos, getReservas } from '../services/db';
 import { ActivityLog, Cliente, Espaco, Reserva } from '../types';
 
@@ -18,6 +18,7 @@ export default function Header({ onSearchSelect, onRefreshData }: HeaderProps) {
   const [showLogsDrawer, setShowLogsDrawer] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<{ type: string; id: string; title: string; subtitle: string }[]>([]);
+  const [brandLogo, setBrandLogo] = useState(() => localStorage.getItem('cfg_brand_logo') || '');
 
   // Clients, spaces & bookings for fast search
   const [clients, setClients] = useState<Cliente[]>([]);
@@ -27,6 +28,14 @@ export default function Header({ onSearchSelect, onRefreshData }: HeaderProps) {
   useEffect(() => {
     loadSearchData();
     loadLogs();
+
+    const handleUpdate = () => {
+      setBrandLogo(localStorage.getItem('cfg_brand_logo') || '');
+    };
+    window.addEventListener('brand-colors-updated', handleUpdate);
+    return () => {
+      window.removeEventListener('brand-colors-updated', handleUpdate);
+    };
   }, []);
 
   const loadSearchData = async () => {
@@ -134,6 +143,26 @@ export default function Header({ onSearchSelect, onRefreshData }: HeaderProps) {
 
       {/* Right Tools: Logs, Backups, Cloud Mode Indicator */}
       <div className="flex items-center gap-4">
+        {brandLogo && (
+          <img 
+            src={brandLogo} 
+            alt="Logo do Espaço" 
+            className="h-8 max-w-[120px] object-contain rounded-lg border border-slate-100 dark:border-slate-800 p-0.5 bg-white dark:bg-slate-900 shadow-sm"
+            referrerPolicy="no-referrer"
+          />
+        )}
+
+        {/* Link to Public Booking Calendar Portal */}
+        <button
+          onClick={() => {
+            window.location.hash = '#reserva';
+          }}
+          className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 font-extrabold text-xs flex items-center gap-1.5 transition-all border border-indigo-200/40 dark:border-indigo-900/20 cursor-pointer shadow-sm"
+          title="Abrir o Canal de Reservas de Autoatendimento do Cliente"
+        >
+          <ExternalLink className="w-3.5 h-3.5 text-indigo-505" />
+          <span>Canal de Clientes</span>
+        </button>
         {/* Trace Activity Logs Drawer Toggle */}
         <button
           id="btn-toggle-logs-drawer"

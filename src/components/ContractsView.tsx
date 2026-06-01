@@ -23,8 +23,12 @@ import {
   AlertTriangle, 
   ArrowRight,
   Eye,
-  Check
+  Check,
+  Download,
+  Loader2
 } from 'lucide-react';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 interface ContractsViewProps {
   preselectedBookingId?: string | null;
@@ -42,6 +46,18 @@ export default function ContractsView({ preselectedBookingId }: ContractsViewPro
   const [contractBodyText, setContractBodyText] = useState('');
   const [saveStatusMessage, setSaveStatusMessage] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'editor' | 'preview'>('editor');
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const [brandLogo, setBrandLogo] = useState(() => typeof window !== 'undefined' ? (localStorage.getItem('cfg_brand_logo') || '') : '');
+
+  useEffect(() => {
+    const handleUpdate = () => {
+      setBrandLogo(localStorage.getItem('cfg_brand_logo') || '');
+    };
+    window.addEventListener('brand-colors-updated', handleUpdate);
+    return () => {
+      window.removeEventListener('brand-colors-updated', handleUpdate);
+    };
+  }, []);
 
   const renderStylizedHTML = () => {
     const lessor = getLessorConfigs();
@@ -51,6 +67,11 @@ export default function ContractsView({ preselectedBookingId }: ContractsViewPro
       <div className="space-y-4 font-serif text-[13px] text-neutral-850 leading-relaxed text-justify select-none">
         {/* Letterhead Header */}
         <div className="text-center border-b-2 border-double border-neutral-300 pb-4 mb-6 font-sans">
+          {brandLogo && (
+            <div className="flex justify-center mb-3">
+              <img src={brandLogo} alt="Logo" className="h-10 object-contain rounded-md max-w-[150px]" referrerPolicy="no-referrer" />
+            </div>
+          )}
           <div className="flex justify-center items-center gap-2 mb-2">
             <span className="w-2.5 h-2.5 rounded-full bg-indigo-600 inline-block"></span>
             <span className="text-xs font-black tracking-widest uppercase text-neutral-900">{lessor.nomeFantasia}</span>
@@ -301,6 +322,65 @@ ${client?.nome || '(LOCATÁRIO)'} (ASSINATURA)`;
     printWindow.document.close();
   };
 
+  // High-fidelity PDF export with brand assets and layout intact
+  const handleExportPdf = async () => {
+    const target = document.getElementById('contract-pdf-render-target');
+    if (!target) return;
+
+    try {
+      setExportingPdf(true);
+      setSaveStatusMessage("Gerando PDF com diagramação original...");
+
+      // Short delay to ensure image assets render complete
+      await new Promise(resolve => setTimeout(resolve, 300));
+
+      const canvas = await html2canvas(target, {
+        scale: 2, // Retains extreme clarity for printed/scanned text
+        useCORS: true,
+        allowTaint: true,
+        logging: false,
+        backgroundColor: '#ffffff'
+      });
+
+      const imgData = canvas.toDataURL('image/jpeg', 0.95);
+      
+      const pdf = new jsPDF('p', 'mm', 'a4');
+      const pdfWidth = pdf.internal.pageSize.getWidth();
+      const pdfHeight = pdf.internal.pageSize.getHeight();
+      
+      const imgWidth = pdfWidth;
+      const imgHeight = (canvas.height * pdfWidth) / canvas.width;
+      
+      let heightLeft = imgHeight;
+      let position = 0;
+
+      // Draw initial page
+      pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+      heightLeft -= pdfHeight;
+
+      // Handle multi-page generation seamlessly
+      while (heightLeft > 0) {
+        position = heightLeft - imgHeight;
+        pdf.addPage();
+        pdf.addImage(imgData, 'JPEG', 0, position, imgWidth, imgHeight, undefined, 'FAST');
+        heightLeft -= pdfHeight;
+      }
+
+      const filename = `Contrato_Reserva_${selectedBookingId || Date.now()}.pdf`;
+      pdf.save(filename);
+      
+      await addActivityLog("Contrato PDF", `Download de proposta de contrato PDF realizado para a Reserva ID: ${selectedBookingId}`);
+      setSaveStatusMessage("PDF exportado com sucesso!");
+      setTimeout(() => setSaveStatusMessage(null), 3000);
+    } catch (err) {
+      console.error(err);
+      setSaveStatusMessage("Erro ao exportar PDF.");
+      setTimeout(() => setSaveStatusMessage(null), 3000);
+    } finally {
+      setExportingPdf(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex justify-center items-center py-24 text-gray-500">
@@ -313,6 +393,21 @@ ${client?.nome || '(LOCATÁRIO)'} (ASSINATURA)`;
   return (
     <div className="space-y-6">
       
+      {/* Offscreen container specifically for rendering high-fidelity PDF without responsive layout wrapping */}
+      <div className="absolute left-[-9999px] top-[-9999px]" aria-hidden="true">
+        <div 
+          id="contract-pdf-render-target" 
+          className="bg-white p-12 text-black w-[800px]"
+          style={{ 
+            fontFamily: 'Times New Roman, Times, serif',
+            color: '#000000',
+            backgroundColor: '#ffffff'
+          }}
+        >
+          {renderStylizedHTML()}
+        </div>
+      </div>
+
       {/* Upper header */}
       <div>
         <h2 className="text-2xl font-bold text-gray-901 dark:text-white leading-tight">Módulo de Contratos</h2>
@@ -368,19 +463,33 @@ ${client?.nome || '(LOCATÁRIO)'} (ASSINATURA)`;
                 <button
                   id="btn-save-contract"
                   onClick={handleSaveContract}
-                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-750 text-white font-bold text-xs rounded-xl cursor-pointer transition flex items-center justify-center gap-2"
+                  className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl cursor-pointer transition flex items-center justify-center gap-2 shadow-sm"
                 >
                   <Save className="w-4 h-4" />
-                  <span>Gravar Contrato no Histórico</span>
+                  <span>Gravar no Histórico</span>
+                </button>
+
+                <button
+                  id="btn-export-pdf"
+                  onClick={handleExportPdf}
+                  disabled={exportingPdf}
+                  className="w-full py-2.5 bg-emerald-650 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl cursor-pointer transition flex items-center justify-center gap-2 shadow-sm disabled:opacity-70"
+                >
+                  {exportingPdf ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Download className="w-4 h-4" />
+                  )}
+                  <span>{exportingPdf ? "Gerando PDF..." : "Baixar PDF Diagramado"}</span>
                 </button>
 
                 <button
                   id="btn-print-contract"
                   onClick={handlePrint}
-                  className="w-full py-2.5 bg-slate-100 dark:bg-slate-850 hover:bg-gray-200 text-gray-700 dark:text-zinc-300 font-semibold text-xs border border-gray-250 dark:border-slate-750 rounded-xl cursor-pointer transition flex items-center justify-center gap-2"
+                  className="w-full py-2.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-750 text-slate-700 dark:text-zinc-200 font-semibold text-xs border border-slate-200 dark:border-slate-700 rounded-xl cursor-pointer transition flex items-center justify-center gap-2"
                 >
                   <Printer className="w-4 h-4" />
-                  <span>Imprimir / Exportar PDF</span>
+                  <span>Imprimir Original (Navegador)</span>
                 </button>
               </div>
 

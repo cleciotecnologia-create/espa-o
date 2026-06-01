@@ -58,6 +58,17 @@ export default function App() {
   // Check ongoing sessions
   useEffect(() => {
     checkSession();
+    
+    // Auto-seed Espaço Tropical logo and color identity if not set
+    const currentLogo = localStorage.getItem('cfg_brand_logo');
+    if (!currentLogo) {
+      const defaultSvgLogo = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyODAgNjQiIHdpZHRoPSIyODAiIGhlaWdodD0iNjQiPgogIDxkZWZzPgogICAgPGxpbmVhckdyYWRpZW50IGlkPSJ0cm9wR3JhZCIgeDE9IjAlIiB5MT0iMCUiIHgyPSIxMDAlIiB5Mj0iMTAwJSI+CiAgICAgIDxzdG9wIG9mZnNldD0iMCUiIHN0b3AtY29sb3I9IiMxMGI5ODEiIC8+CiAgICAgIDxzdG9wIG9mZnNldD0iMTAwJSIgc3RvcC1jb2xvcj0iIzA0Nzg1NyIgLz4KICAgIDwvbGluZWFyR3JhZGllbnQ+CiAgPC9kZWZzPgogIDxnIGZpbGw9Im5vbmUiIHN0cm9rZT0ibm9uZSI+CiAgICA8Y2lyY2xlIGN4PSIzMiIgY3k9IjMyIiByPSIyOCIgZmlsbD0idXJsKCN0cm9wR3JhZCkiIG9wYWNpdHk9IjAuMTUiLz4KICAgIDxjaXJjbGUgY3g9IjMyIiBjeT0iMzIiIHI9IjIyIiBmaWxsPSJ1cmwoI3Ryb3BHcmFkKSIvPgogICAgPHBhdGggZD0iTTMyLDQ0IEwzMiwyOCBNMzIsMjkgQzI4LDIxIDE4LDI4IDE4LDI4IEMyNCwyOCAzMCwzMSAzMCwzMSBNMzIsMjkgQzM2LDIxIDQ2LDI4IDQ2LDI4IEM0MCwyOCAzNCwzMSAzNCwzMSBNMzIsMjggQzI2LDIyIDIxLDE3IDIxLDE3IEMyNiwyMCAzMCwyNiAzMCwyNiBNMzIsMjggQzM4LDIyIDQzLDE3IDQzLDE3IEMyOCwyMCAzNCwyNiAzNCwyNiBNMzIsMjYgQzMwLDE1IDMwLDE1IDMwLDE1IEMzMiwyMCAzMiwyNiAzMiwyNiIgc3Ryb2tlPSIjZmZmZmZmIiBzdHJva2Utd2lkdGg9IjIiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPgogICAgPHRleHQgeD0iNjgiIHk9IjI5IiBmb250LWZhbWlseT0iJ0ludGVyJywgc2Fucy1zZXJpZiIgZm9udC13ZWlnaHQ9IjkwMCIgZm9udC1zaXplPSIxNiIgZmlsbD0iIzA0Nzg1NyIgbGV0dGVyLXNwYWNpbmc9Ii0wLjUiPkVTUEHDTyBUUk9QSUNBTDwvdGV4dD4KICAgIDx0ZXh0IHg9IjY5IiB5PSI0NCIgZm9udC1mYW1pbHk9IidJbnRlcicsIHNhbnMtc2VyaWYiIGZvbnQtd2VpZ2h0PSI3MDAiIGZvbnQtc2l6ZT0iOSIgZmlsbD0iIzEwYjk4MSIgbGV0dGVyLXNwYWNpbmc9IjMuMiI+TEFaRVIgJmFtcDsgRVZFTlRPUzwvdGV4dD4KICA8L2c+Cjwvc3ZnPg==';
+      localStorage.setItem('cfg_brand_logo', defaultSvgLogo);
+      localStorage.setItem('cfg_brand_primary', '#059669'); // emerald-600
+      localStorage.setItem('cfg_brand_secondary', '#10b981'); // emerald-500
+      localStorage.setItem('cfg_pix_name', 'Espaço Tropical Ltda');
+      window.dispatchEvent(new Event('brand-colors-updated'));
+    }
   }, []);
 
   const checkSession = async () => {
