@@ -130,24 +130,30 @@ export default function FunnelView() {
   }, [selectedClienteId, clientes]);
 
   // Load existing clients & spaces
-  useEffect(() => {
-    async function loadData() {
-      try {
-        const cList = await getClientes();
-        const sList = await getEspacos();
-        setClientes(cList);
-        setEspacos(sList);
-        
-        if (cList.length > 0) setSelectedClienteId(cList[0].id);
-        if (sList.length > 0) setSelectedEspacoId(sList[0].id);
-      } catch (err) {
-        console.error("Erro ao carregar dados para o simulador:", err);
-      }
+  const loadFunnelInitialData = async () => {
+    try {
+      const cList = await getClientes();
+      const sList = await getEspacos();
+      setClientes(cList);
+      setEspacos(sList);
+      
+      if (cList.length > 0) setSelectedClienteId(cList[0].id);
+      if (sList.length > 0) setSelectedEspacoId(sList[0].id);
+    } catch (err) {
+      console.error("Erro ao carregar dados para o simulador:", err);
     }
-    loadData();
+  };
+
+  useEffect(() => {
+    loadFunnelInitialData();
     
     // Add initial log entry
     addSimulateLog("Esteira Inicializada. Selecione o Cliente e o Espaço para iniciar o funil de reserva de 50%.");
+
+    window.addEventListener('es-database-updated', loadFunnelInitialData);
+    return () => {
+      window.removeEventListener('es-database-updated', loadFunnelInitialData);
+    };
   }, []);
 
   // Timer logic for Step 4

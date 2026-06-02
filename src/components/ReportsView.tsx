@@ -39,6 +39,10 @@ export default function ReportsView() {
 
   useEffect(() => {
     loadReportsData();
+    window.addEventListener('es-database-updated', loadReportsData);
+    return () => {
+      window.removeEventListener('es-database-updated', loadReportsData);
+    };
   }, []);
 
   const loadReportsData = async () => {

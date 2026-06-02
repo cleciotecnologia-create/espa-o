@@ -29,7 +29,10 @@ import {
   EyeOff, 
   Activity, 
   UserCheck,
-  RefreshCw
+  RefreshCw,
+  Upload,
+  Camera,
+  Image as ImageIcon
 } from 'lucide-react';
 import { getCurrentUser } from '../services/firebase';
 
@@ -52,13 +55,19 @@ export default function UsersView() {
   const [formEmail, setFormEmail] = useState('');
   const [formSenhaSecreta, setFormSenhaSecreta] = useState('');
   const [formRole, setFormRole] = useState<'superadmin' | 'administrador' | 'operador' | 'desenvolvedor'>('operador');
+  const [formPhotoURL, setFormPhotoURL] = useState('');
   const [formError, setFormError] = useState('');
+  const [imageUploading, setImageUploading] = useState(false);
 
   // Password visibility state map by user ID
   const [visiblePasswords, setVisiblePasswords] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     loadAllData();
+    window.addEventListener('es-database-updated', loadAllData);
+    return () => {
+      window.removeEventListener('es-database-updated', loadAllData);
+    };
   }, []);
 
   const loadAllData = async () => {
@@ -90,6 +99,7 @@ export default function UsersView() {
     setFormEmail('');
     setFormSenhaSecreta('');
     setFormRole('operador');
+    setFormPhotoURL('');
     setFormError('');
     setIsModalOpen(true);
   };
@@ -100,6 +110,7 @@ export default function UsersView() {
     setFormEmail(user.email);
     setFormSenhaSecreta(user.senhaSecreta);
     setFormRole(user.role);
+    setFormPhotoURL(user.photoURL || '');
     setFormError('');
     setIsModalOpen(true);
   };
@@ -129,23 +140,36 @@ export default function UsersView() {
     }
 
     try {
-      const payload: Omit<SystemUser, 'id' | 'createdAt'> & { id?: string; createdAt?: string } = {
+      const payload: Omit<SystemUser, 'id' | 'createdAt'> & { id?: string; createdAt?: string; photoURL?: string } = {
         nome: formNome.trim(),
         email: formEmail.trim().toLowerCase(),
         senhaSecreta: formSenhaSecreta,
         role: formRole,
+        photoURL: formPhotoURL,
       };
 
       if (editingUser) {
         payload.id = editingUser.id;
         payload.createdAt = editingUser.createdAt;
+
+        // If updated user is current active session user, sync local storage!
+        if (currentUserSession && (currentUserSession.uid === editingUser.id || currentUserSession.email === editingUser.email)) {
+          const updatedSession = {
+            ...currentUserSession,
+            displayName: formNome.trim(),
+            email: formEmail.trim().toLowerCase(),
+            role: formRole,
+            photoURL: formPhotoURL || currentUserSession.photoURL
+          };
+          localStorage.setItem('es_user_session', JSON.stringify(updatedSession));
+        }
       }
 
       await saveSystemUser(payload);
       setIsModalOpen(false);
       loadAllData();
 
-      // Trigger custom branding event in case user self-updated or to refresh App state
+      // Trigger custom branding event in case user self-updated or to refresh App state (including checkSession())
       window.dispatchEvent(new Event('brand-colors-updated'));
     } catch (error: any) {
       setFormError('Erro ao gravar operador: ' + error.message);
@@ -380,9 +404,18 @@ export default function UsersView() {
 
                     {/* Profile & Identity block */}
                     <div className="flex gap-4.5 items-start">
-                      <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-100 to-slate-200 dark:from-slate-800 dark:to-slate-900 flex items-center justify-center font-extrabold text-sm text-indigo-650 dark:text-indigo-350 shadow-inner border border-white/50 dark:border-slate-800">
-                        {initials}
-                      </div>
+                      {usr.photoURL ? (
+                        <img 
+                          src={usr.photoURL} 
+                          alt={usr.nome} 
+                          className="w-12 h-12 rounded-xl object-cover shadow-sm border border-slate-200 dark:border-slate-800 shrink-0"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-indigo-100 to-slate-200 dark:from-slate-800 dark:to-slate-900 flex items-center justify-center font-extrabold text-sm text-indigo-650 dark:text-indigo-350 shadow-inner border border-white/50 dark:border-slate-800 shrink-0">
+                          {initials}
+                        </div>
+                      )}
                       <div className="space-y-1 overflow-hidden flex-1">
                         <span className={`px-2 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider font-sans inline-block ${getRoleBadgeStyle(usr.role)}`}>
                           {getRoleLabel(usr.role)}
@@ -568,6 +601,95 @@ export default function UsersView() {
                   className="w-full px-3.5 py-2.5 text-xs font-mono rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-950 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   title="Será utilizada para o painel de login"
                 />
+              </div>
+
+              {/* Foto de Perfil */}
+              <div>
+                <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1.5 flex items-center justify-between">
+                  <span>Foto de Perfil</span>
+                  <span className="text-[10px] text-gray-400 dark:text-slate-500 font-medium normal-case">Upload de arquivo ou escolha rápida</span>
+                </label>
+
+                <div className="flex gap-4 items-center bg-slate-50 dark:bg-slate-950/40 p-3 rounded-xl border border-gray-200/60 dark:border-slate-850">
+                  {/* Photo Preview */}
+                  <div className="relative group shrink-0">
+                    {formPhotoURL ? (
+                      <div className="relative w-14 h-14 rounded-xl overflow-hidden shadow-md border border-slate-200 dark:border-slate-800">
+                        <img 
+                          src={formPhotoURL} 
+                          alt="Foto de Perfil" 
+                          className="w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setFormPhotoURL('')}
+                          className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-[10px] font-bold"
+                        >
+                          Remover
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="w-14 h-14 rounded-xl bg-slate-200 dark:bg-slate-800 flex flex-col items-center justify-center text-slate-400 dark:text-slate-600 border border-dashed border-slate-300 dark:border-slate-700">
+                        <Camera className="w-5 h-5" />
+                        <span className="text-[8px] uppercase font-black tracking-wider mt-1">Sem foto</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Upload Controls & Presets */}
+                  <div className="flex-1 space-y-2 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="file"
+                        id="user-profile-file-input"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setImageUploading(true);
+                            const reader = new FileReader();
+                            reader.onloadend = () => {
+                              setFormPhotoURL(reader.result as string);
+                              setImageUploading(false);
+                            };
+                            reader.readAsDataURL(file);
+                          }
+                        }}
+                      />
+                      <label
+                        htmlFor="user-profile-file-input"
+                        className={`px-3 py-1.5 bg-white dark:bg-slate-900 border border-gray-300 dark:border-slate-700 text-gray-700 dark:text-zinc-200 rounded-lg text-xs font-black shadow-sm cursor-pointer transition-all duration-200 flex items-center gap-1.5 active:scale-[0.98] ${imageUploading ? 'opacity-60 cursor-not-allowed pointer-events-none' : ''}`}
+                      >
+                        <Upload className="w-3.5 h-3.5 text-indigo-500" />
+                        <span>{imageUploading ? "Lendo..." : "Upload Foto"}</span>
+                      </label>
+                    </div>
+
+                    {/* Presets List */}
+                    <div className="space-y-1">
+                      <span className="text-[10px] text-gray-400 dark:text-slate-500 font-bold block">Escolha rápida:</span>
+                      <div className="flex gap-2">
+                        {[
+                          'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&h=80&fit=crop',
+                          'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=80&h=80&fit=crop',
+                          'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=80&h=80&fit=crop',
+                          'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=80&h=80&fit=crop',
+                        ].map((url, i) => (
+                          <button
+                            type="button"
+                            key={i}
+                            onClick={() => setFormPhotoURL(url)}
+                            className={`w-6 h-6 rounded-full overflow-hidden border transition active:scale-90 ${formPhotoURL === url ? 'ring-2 ring-indigo-500 border-indigo-500 scale-105' : 'border-slate-300 dark:border-slate-700 hover:scale-105'}`}
+                          >
+                            <img src={url} alt="preset" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Role Selection */}

@@ -27,10 +27,12 @@ import {
   Users,
   UserPlus,
   Shield,
-  Trash2
+  Trash2,
+  Image
 } from 'lucide-react';
 import { getEspacos, getClientes, getReservas, getPagamentos, getContratos, getLogs, getSystemUsers, saveSystemUser, deleteSystemUser } from '../services/db';
 import { SystemUser } from '../types';
+import { compressImage } from '../utils/image';
 
 export default function SettingsView() {
   const [backupMessage, setBackupMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -88,9 +90,17 @@ export default function SettingsView() {
     }, 4500);
   };
 
-  useEffect(() => {
+  const syncSettingsData = () => {
     loadDatabaseStats();
     loadSystemUsersList();
+  };
+
+  useEffect(() => {
+    syncSettingsData();
+    window.addEventListener('es-database-updated', syncSettingsData);
+    return () => {
+      window.removeEventListener('es-database-updated', syncSettingsData);
+    };
   }, []);
 
   const loadSystemUsersList = async () => {
@@ -206,25 +216,24 @@ export default function SettingsView() {
     setTimeout(() => setBackupMessage(null), 4000);
   };
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setLogoUploading(true);
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const resultString = reader.result as string;
-      setBrandLogo(resultString);
-      localStorage.setItem('cfg_brand_logo', resultString);
+    try {
+      // Compress the brand logo to a reasonable size (e.g. max 500x500px, quality 0.85) to avoid local storage quota failures
+      const compressedBase64 = await compressImage(file, 500, 500, 0.85);
+      setBrandLogo(compressedBase64);
+      localStorage.setItem('cfg_brand_logo', compressedBase64);
       window.dispatchEvent(new Event('brand-colors-updated'));
       setLogoUploading(false);
       showToast('Logomarca enviada e salva com sucesso!');
-    };
-    reader.onerror = () => {
+    } catch (err) {
+      console.error(err);
       setLogoUploading(false);
-      showToast('Falha ao ler o arquivo de imagem.', 'error');
-    };
-    reader.readAsDataURL(file);
+      showToast('Falha ao ler ou converter o arquivo de imagem.', 'error');
+    }
   };
 
   const saveBrandIdentity = (primaryColor: string, secondaryColor: string, logoUrl: string) => {
@@ -1145,35 +1154,37 @@ export default function SettingsView() {
                     type="text"
                     placeholder="Ex: https://link-da-imagem.com/logo.png"
                     value={brandLogo}
-                    onChange={(e) => setBrandLogo(e.target.value)}
+                    onChange={(e) => {
+                      setBrandLogo(e.target.value);
+                      localStorage.setItem('cfg_brand_logo', e.target.value);
+                      window.dispatchEvent(new Event('brand-colors-updated'));
+                    }}
                     className="w-full px-3 py-2 border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-850 text-xs rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 mb-2"
                   />
                 </div>
 
-                <div className="relative">
-                  <div className="absolute inset-0 flex items-center" aria-hidden="true">
-                    <div className="w-full border-t border-slate-200 dark:border-slate-850" />
+                {/* Live upload image thumbnail preview */}
+                <div className="flex items-center gap-4 bg-slate-50 dark:bg-slate-900/40 p-3 rounded-xl border border-slate-150 dark:border-slate-800">
+                  <div className="w-16 h-16 bg-white dark:bg-slate-950 border border-slate-200 dark:border-slate-850 rounded-xl flex items-center justify-center p-2 relative overflow-hidden shrink-0 shadow-sm">
+                    {brandLogo ? (
+                      <img src={brandLogo} alt="Logomarca do Espaço" className="w-full h-full object-contain" referrerPolicy="no-referrer" />
+                    ) : (
+                      <Image className="w-6 h-6 text-slate-350 dark:text-slate-650" />
+                    )}
                   </div>
-                  <div className="relative flex justify-center text-[9px] uppercase font-bold">
-                    <span className="bg-white dark:bg-slate-900 px-2 text-slate-400">ou faça upload</span>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-3">
-                  <label className="flex-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 dark:border-slate-800 hover:border-indigo-500 dark:hover:border-indigo-500 hover:bg-slate-50/50 dark:hover:bg-slate-950/20 py-3.5 px-4 rounded-xl cursor-pointer transition-all gap-1 text-center group">
-                    <Upload className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-colors" />
-                    <span className="text-[10px] font-extrabold text-slate-600 dark:text-zinc-350 tracking-wide uppercase">
-                      {logoUploading ? "Lendo arquivo..." : "Escolher arquivo de Imagem"}
+                  <div className="flex-1 min-w-0">
+                    <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Logomarca Selecionada</span>
+                    {brandLogo ? (
+                      <span className="block text-xs font-bold text-emerald-600 dark:text-emerald-400 mt-0.5 truncate">
+                        {brandLogo.startsWith('data:') ? '✓ Arquivo de Imagem Carregado' : '✓ URL Ativa'}
+                      </span>
+                    ) : (
+                      <span className="block text-xs text-slate-400 mt-0.5">Nenhuma imagem definida</span>
+                    )}
+                    <span className="block text-[9px] text-slate-400 mt-0.5 leading-snug">
+                      Suporta PNG, JPG, JPEG ou SVG
                     </span>
-                    <span className="text-[8px] text-slate-400">PNG, JPG, JPEG ou SVG</span>
-                    <input
-                      type="file"
-                      accept="image/*"
-                      onChange={handleLogoUpload}
-                      className="hidden"
-                      disabled={logoUploading}
-                    />
-                  </label>
+                  </div>
                   {brandLogo && (
                     <button
                       type="button"
@@ -1183,13 +1194,44 @@ export default function SettingsView() {
                         window.dispatchEvent(new Event('brand-colors-updated'));
                         showToast('Logomarca removida com sucesso!');
                       }}
-                      className="px-2.5 py-2 hover:bg-rose-50 dark:hover:bg-rose-950/20 border border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase text-rose-500 rounded-lg hover:border-rose-250 cursor-pointer transition-all"
-                      title="Remover Logomarca atual"
+                      className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 dark:bg-rose-950/20 dark:hover:bg-rose-900/30 border border-rose-200 dark:border-rose-900/50 text-[10px] font-black uppercase text-rose-600 dark:text-rose-400 rounded-lg cursor-pointer transition-all"
+                      title="Excluir imagem atual"
                     >
                       Remover
                     </button>
                   )}
                 </div>
+
+                <div className="relative">
+                  <div className="absolute inset-0 flex items-center" aria-hidden="true">
+                    <div className="w-full border-t border-slate-200 dark:border-slate-850" />
+                  </div>
+                  <div className="relative flex justify-center text-[9px] uppercase font-bold">
+                    <span className="bg-white dark:bg-slate-900 px-2 text-slate-400">ou envie um novo arquivo</span>
+                  </div>
+                </div>
+
+                <div className="pt-0.5">
+                  <input
+                    type="file"
+                    id="brand-logo-file-picker-settings"
+                    accept="image/*"
+                    onChange={handleLogoUpload}
+                    className="hidden"
+                    disabled={logoUploading}
+                  />
+                  <label
+                    htmlFor="brand-logo-file-picker-settings"
+                    className="w-full border-2 border-dashed border-slate-200 dark:border-slate-800 hover:border-indigo-500 dark:hover:border-indigo-500 hover:bg-indigo-50/10 dark:hover:bg-indigo-950/10 py-3 px-4 rounded-xl cursor-pointer transition-all flex flex-col items-center justify-center gap-1 group"
+                  >
+                    <Upload className="w-4 h-4 text-slate-400 group-hover:text-indigo-500 transition-colors" />
+                    <span className="text-[10px] font-extrabold text-slate-600 dark:text-zinc-300 tracking-wide uppercase">
+                      {logoUploading ? "Subindo imagem..." : "Procurar e selecionar imagem no computador"}
+                    </span>
+                    <span className="text-[8px] text-slate-400">Clique para abrir o selecionador de arquivos</span>
+                  </label>
+                </div>
+
                 <p className="text-[10px] text-slate-400 leading-normal">Essa logomarca será exibida nos cabeçalhos (Sidebar e Header) e na ficha pública de agendamentos.</p>
               </div>
             </div>

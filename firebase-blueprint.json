@@ -95,6 +95,21 @@
         "timestamp": { "type": "string", "format": "date-time", "description": "Data exata da operação" }
       },
       "required": ["id", "usuario", "acao", "timestamp"]
+    },
+    "SystemUser": {
+      "title": "SystemUser",
+      "description": "Operadores credenciados do sistema ERP",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "ID exclusivo do usuário" },
+        "nome": { "type": "string", "description": "Nome completo" },
+        "email": { "type": "string", "format": "email", "description": "Email de login" },
+        "senhaSecreta": { "type": "string", "description": "Senha secreta" },
+        "role": { "type": "string", "enum": ["superadmin", "administrador", "operador", "desenvolvedor"], "description": "Nível de permissão" },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Data de cadastro" },
+        "photoURL": { "type": "string", "description": "URL ou base64 da foto de perfil" }
+      },
+      "required": ["id", "nome", "email", "senhaSecreta", "role", "createdAt"]
     }
   },
   "firestore": {
@@ -121,6 +136,10 @@
     "logs": {
       "schema": "ActivityLog",
       "description": "Registros de trilha de auditoria administrativa"
+    },
+    "system_users": {
+      "schema": "SystemUser",
+      "description": "Lista de usuários operadores cadastrados"
     }
   }
 }

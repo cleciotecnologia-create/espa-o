@@ -53,6 +53,10 @@ export default function DashboardView({ onNavigateToView }: DashboardViewProps) 
 
   useEffect(() => {
     loadData();
+    window.addEventListener('es-database-updated', loadData);
+    return () => {
+      window.removeEventListener('es-database-updated', loadData);
+    };
   }, []);
 
   const loadData = async () => {

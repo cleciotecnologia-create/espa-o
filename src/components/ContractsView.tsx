@@ -134,6 +134,10 @@ export default function ContractsView({ preselectedBookingId }: ContractsViewPro
 
   useEffect(() => {
     loadContractCompilationInputs();
+    window.addEventListener('es-database-updated', loadContractCompilationInputs);
+    return () => {
+      window.removeEventListener('es-database-updated', loadContractCompilationInputs);
+    };
   }, [preselectedBookingId]);
 
   const loadContractCompilationInputs = async () => {

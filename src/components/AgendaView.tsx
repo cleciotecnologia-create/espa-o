@@ -39,10 +39,16 @@ import {
   ShieldCheck,
   QrCode,
   Download,
-  RefreshCw
+  RefreshCw,
+  BookOpen,
+  FileText
 } from 'lucide-react';
 
-export default function AgendaView() {
+interface AgendaViewProps {
+  onNavigateToView?: (view: string, itemId?: string) => void;
+}
+
+export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
   const [bookings, setBookings] = useState<Reserva[]>([]);
   const [spaces, setSpaces] = useState<Espaco[]>([]);
   const [clients, setClients] = useState<Cliente[]>([]);
@@ -239,6 +245,10 @@ export default function AgendaView() {
 
   useEffect(() => {
     loadAllData();
+    window.addEventListener('es-database-updated', loadAllData);
+    return () => {
+      window.removeEventListener('es-database-updated', loadAllData);
+    };
   }, []);
 
   const loadAllData = async () => {
@@ -356,6 +366,15 @@ export default function AgendaView() {
     document.body.removeChild(link);
   };
 
+  // Helper to check if a day is in the past (local midnight)
+  const isPastDate = (d: Date) => {
+    const today = new Date();
+    today.setHours(0,0,0,0);
+    const compareDate = new Date(d);
+    compareDate.setHours(0,0,0,0);
+    return compareDate < today;
+  };
+
   // Helper to get bookings on a specific date String
   const getDayBookings = (dateStr: string) => {
     return activeBookings.filter(b => b.dataEvento === dateStr);
@@ -366,9 +385,13 @@ export default function AgendaView() {
     const existing = getDayBookings(isoString);
 
     if (existing.length > 0) {
-      // Inspect booking
+      // Inspect booking (even in the past, to view historical audits/details)
       setSelectedBookingForInspect(existing[0]);
     } else {
+      if (isPastDate(dayDate)) {
+        // Prevent reserving on a past date
+        return;
+      }
       // Create new booking on empty day
       setSelectedDayISO(isoString);
       setEditingBooking(null);
@@ -668,17 +691,25 @@ export default function AgendaView() {
                 const dayIso = day.toISOString().split('T')[0];
                 const dayBookings = getDayBookings(dayIso);
                 const hasBooking = dayBookings.length > 0;
+                const isPast = isPastDate(day);
                 
+                let cellClass = "";
+                if (hasBooking) {
+                  cellClass = isPast
+                    ? 'h-24 p-2.5 rounded-xl border flex flex-col justify-between cursor-pointer border-indigo-150/40 dark:border-indigo-950/60 bg-indigo-50/15 dark:bg-indigo-950/5 opacity-80 hover:opacity-100 shadow-sm transition-all duration-200 animate-fade-in'
+                    : 'h-24 p-2.5 rounded-xl border flex flex-col justify-between cursor-pointer transition-all duration-200 transform hover:-translate-y-0.5 border-indigo-200 dark:border-indigo-900/50 bg-indigo-50/50 dark:bg-indigo-950/15 hover:bg-indigo-100/60 dark:hover:bg-indigo-950/25 shadow-sm hover:shadow animate-fade-in';
+                } else if (isPast) {
+                  cellClass = 'h-24 p-2.5 rounded-xl border flex flex-col justify-between border-gray-200/50 dark:border-slate-800/50 bg-gray-50/40 dark:bg-slate-900/10 text-gray-400 dark:text-zinc-650 opacity-60 cursor-not-allowed select-none animate-fade-in';
+                } else {
+                  cellClass = 'h-24 p-2.5 rounded-xl border flex flex-col justify-between cursor-pointer transition-all duration-200 transform hover:-translate-y-0.5 border-emerald-150 dark:border-emerald-900/30 bg-emerald-50/20 dark:bg-emerald-950/5 hover:border-emerald-400 dark:hover:border-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/15 shadow-sm hover:shadow animate-fade-in';
+                }
+
                 return (
                   <div
                     key={`day-${day.getDate()}`}
                     id={`calendar-day-${dayIso}`}
                     onClick={() => handleDayClick(day)}
-                    className={`h-24 p-2.5 rounded-xl border flex flex-col justify-between cursor-pointer transition-all duration-200 transform hover:-translate-y-0.5 ${
-                      hasBooking 
-                        ? 'border-indigo-200 dark:border-indigo-900/50 bg-indigo-50/50 dark:bg-indigo-950/15 hover:bg-indigo-100/60 dark:hover:bg-indigo-950/25 shadow-sm hover:shadow' 
-                        : 'border-emerald-150 dark:border-emerald-900/30 bg-emerald-50/20 dark:bg-emerald-950/5 hover:border-emerald-400 dark:hover:border-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/15 shadow-sm hover:shadow'
-                    }`}
+                    className={cellClass}
                   >
                     {/* Day number header */}
                     <div className="flex items-center justify-between w-full">
@@ -702,6 +733,10 @@ export default function AgendaView() {
                             {b.tipoEvento}
                           </div>
                         ))}
+                      </div>
+                    ) : isPast ? (
+                      <div className="flex items-center gap-1 self-start bg-gray-500/5 dark:bg-slate-800/15 text-gray-400 dark:text-zinc-500 text-[7.5px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-gray-200/60 dark:border-slate-800/40">
+                        Dia Passado
                       </div>
                     ) : (
                       <div className="flex items-center gap-1 self-start bg-emerald-500/10 dark:bg-emerald-400/10 text-emerald-700 dark:text-emerald-405 text-[8px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded-full border border-emerald-500/10">
@@ -857,6 +892,57 @@ export default function AgendaView() {
                   <strong>Observações:</strong> {selectedBookingForInspect.observacoes}
                 </div>
               )}
+
+              {/* Vínculos do Evento */}
+              <div className="pt-3 border-t border-gray-100 dark:border-slate-800 space-y-2 mt-2">
+                <p className="text-[10px] text-gray-400 dark:text-zinc-500 uppercase tracking-widest font-bold font-mono">Dossiê Legal & Cadastro</p>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (onNavigateToView) {
+                        try {
+                          await addActivityLog(
+                            "Auditoria - Ficha de Reserva",
+                            `Visualizou o Book de Detalhes da Reserva #${selectedBookingForInspect.id} (${selectedBookingForInspect.tipoEvento})`
+                          );
+                        } catch (err) {
+                          console.warn("Failsafe non-blocking audit logging:", err);
+                        }
+                        onNavigateToView('bookings', selectedBookingForInspect.id);
+                        setSelectedBookingForInspect(null);
+                      }
+                    }}
+                    className="py-2 px-2.5 rounded-xl bg-indigo-50 dark:bg-indigo-950/20 hover:bg-indigo-100 dark:hover:bg-indigo-950/40 border border-indigo-100/60 dark:border-indigo-900/30 text-indigo-750 dark:text-indigo-400 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                    title="Abre a ficha cadastral e o book completo do evento"
+                  >
+                    <BookOpen className="w-3.5 h-3.5" />
+                    Abrir Book
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (onNavigateToView) {
+                        try {
+                          await addActivityLog(
+                            "Auditoria - Contrato",
+                            `Visualizou o Contrato por Adesão da Reserva #${selectedBookingForInspect.id} (${selectedBookingForInspect.tipoEvento})`
+                          );
+                        } catch (err) {
+                          console.warn("Failsafe non-blocking audit logging:", err);
+                        }
+                        onNavigateToView('contracts', selectedBookingForInspect.id);
+                        setSelectedBookingForInspect(null);
+                      }
+                    }}
+                    className="py-2 px-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/20 hover:bg-emerald-100 dark:hover:bg-emerald-950/40 border border-emerald-100/60 dark:border-emerald-900/30 text-emerald-750 dark:text-emerald-400 text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+                    title="Abre e compila o Contrato de Adesão referente a esta locação"
+                  >
+                    <FileText className="w-3.5 h-3.5" />
+                    Ver Contrato
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Actions for Inspector */}

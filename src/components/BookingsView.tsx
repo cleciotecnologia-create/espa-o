@@ -94,6 +94,10 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
 
   useEffect(() => {
     loadAllBookings();
+    window.addEventListener('es-database-updated', loadAllBookings);
+    return () => {
+      window.removeEventListener('es-database-updated', loadAllBookings);
+    };
   }, [focusedBookingId]);
 
   // Adjust form total valuations upon space select, event type, or date

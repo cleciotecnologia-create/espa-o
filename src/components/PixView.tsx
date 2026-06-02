@@ -66,6 +66,10 @@ export default function PixView({ preselectedBookingId }: PixViewProps) {
 
   useEffect(() => {
     loadPixData();
+    window.addEventListener('es-database-updated', loadPixData);
+    return () => {
+      window.removeEventListener('es-database-updated', loadPixData);
+    };
   }, [preselectedBookingId]);
 
   const loadPixData = async () => {

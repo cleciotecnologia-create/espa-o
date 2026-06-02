@@ -149,9 +149,18 @@ export default function Sidebar({
         {/* User Session & System Controls */}
         <div className="p-4 border-t border-slate-100 dark:border-slate-900 space-y-3 bg-slate-50/50 dark:bg-slate-950/60">
           <div className="flex items-center gap-3 px-2">
-            <div className="w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-900 flex items-center justify-center font-extrabold text-sm text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-800">
-              {currentUser?.email ? currentUser.email[0].toUpperCase() : 'C'}
-            </div>
+            {currentUser?.photoURL ? (
+              <img 
+                src={currentUser.photoURL} 
+                alt="Foto de Perfil" 
+                className="w-9 h-9 rounded-full object-cover border border-slate-200 dark:border-slate-800 flex-shrink-0"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-900 flex items-center justify-center font-extrabold text-sm text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-800 flex-shrink-0">
+                {currentUser?.email ? currentUser.email[0].toUpperCase() : 'C'}
+              </div>
+            )}
             <div className="overflow-hidden">
               <p className="text-xs font-bold text-slate-900 dark:text-zinc-100 truncate">{currentUser?.displayName || 'Clécio Santos'}</p>
               <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{currentUser?.email || 'admin@eventspace.com'}</p>

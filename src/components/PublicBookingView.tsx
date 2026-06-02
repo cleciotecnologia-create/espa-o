@@ -130,8 +130,10 @@ export default function PublicBookingView() {
       setBrandLogo(localStorage.getItem('cfg_brand_logo') || '');
     };
     window.addEventListener('brand-colors-updated', handleUpdate);
+    window.addEventListener('es-database-updated', loadExistingData);
     return () => {
       window.removeEventListener('brand-colors-updated', handleUpdate);
+      window.removeEventListener('es-database-updated', loadExistingData);
     };
   }, []);
 

@@ -13,7 +13,8 @@ import {
   setDoc, 
   getDoc, 
   query, 
-  where 
+  where,
+  onSnapshot
 } from 'firebase/firestore';
 import { db, isLocalMode, handleFirestoreError, OperationType } from './firebase';
 import { Cliente, Espaco, Reserva, Pagamento, Contrato, ActivityLog, SystemUser } from '../types';
@@ -333,6 +334,76 @@ function initLocalDB() {
 // Call initially
 if (typeof window !== 'undefined') {
   initLocalDB();
+
+  // Initialize real-time sync with Firestore database if active
+  if (!isLocalMode && db) {
+    try {
+      // 1. Listen to 'espacos'
+      onSnapshot(collection(db, 'espacos'), (snapshot) => {
+        const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        localStorage.setItem('es_spaces', JSON.stringify(items));
+        window.dispatchEvent(new Event('es-database-updated'));
+      }, (err) => {
+        console.warn("Real-time sync error on 'espacos':", err);
+      });
+
+      // 2. Listen to 'clientes'
+      onSnapshot(collection(db, 'clientes'), (snapshot) => {
+        const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        localStorage.setItem('es_clients', JSON.stringify(items));
+        window.dispatchEvent(new Event('es-database-updated'));
+      }, (err) => {
+        console.warn("Real-time sync error on 'clientes':", err);
+      });
+
+      // 3. Listen to 'reservas'
+      onSnapshot(collection(db, 'reservas'), (snapshot) => {
+        const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        localStorage.setItem('es_bookings', JSON.stringify(items));
+        window.dispatchEvent(new Event('es-database-updated'));
+      }, (err) => {
+        console.warn("Real-time sync error on 'reservas':", err);
+      });
+
+      // 4. Listen to 'pagamentos'
+      onSnapshot(collection(db, 'pagamentos'), (snapshot) => {
+        const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        localStorage.setItem('es_payments', JSON.stringify(items));
+        window.dispatchEvent(new Event('es-database-updated'));
+      }, (err) => {
+        console.warn("Real-time sync error on 'pagamentos':", err);
+      });
+
+      // 5. Listen to 'contratos'
+      onSnapshot(collection(db, 'contratos'), (snapshot) => {
+        const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        localStorage.setItem('es_contracts', JSON.stringify(items));
+        window.dispatchEvent(new Event('es-database-updated'));
+      }, (err) => {
+        console.warn("Real-time sync error on 'contratos':", err);
+      });
+
+      // 6. Listen to 'logs'
+      onSnapshot(collection(db, 'logs'), (snapshot) => {
+        const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })).sort((a: any, b: any) => b.timestamp.localeCompare(a.timestamp));
+        localStorage.setItem('es_logs', JSON.stringify(items));
+        window.dispatchEvent(new Event('es-database-updated'));
+      }, (err) => {
+        console.warn("Real-time sync error on 'logs':", err);
+      });
+
+      // 7. Listen to 'system_users'
+      onSnapshot(collection(db, 'system_users'), (snapshot) => {
+        const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        localStorage.setItem('es_system_users', JSON.stringify(items));
+        window.dispatchEvent(new Event('es-database-updated'));
+      }, (err) => {
+        console.warn("Real-time sync error on 'system_users':", err);
+      });
+    } catch (error) {
+      console.error("Failed to start Firestore real-time onSnapshot listeners:", error);
+    }
+  }
 }
 
 // Helper to interact with Local DB

@@ -125,6 +125,7 @@ export interface SystemUser {
   senhaSecreta: string;
   role: 'superadmin' | 'administrador' | 'operador' | 'desenvolvedor';
   createdAt: string;
+  photoURL?: string;
 }
 
 

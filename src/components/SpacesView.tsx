@@ -7,6 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { getEspacos, saveEspaco, deleteEspaco } from '../services/db';
 import { Espaco } from '../types';
 import { Plus, Edit, Trash, Image, Check, X, AlertTriangle, Eye, Upload, FileText, ChevronLeft, ChevronRight, Trash2, Camera } from 'lucide-react';
+import { compressImage } from '../utils/image';
 
 const isPdfFile = (src?: string) => {
   if (!src) return false;
@@ -33,25 +34,23 @@ export default function SpacesView() {
     };
   }, []);
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
     const file = files[0];
     setLogoUploading(true);
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const resultString = reader.result as string;
-      localStorage.setItem('cfg_brand_logo', resultString);
-      setBrandLogo(resultString);
+    try {
+      const compressedBase64 = await compressImage(file, 500, 500, 0.85);
+      localStorage.setItem('cfg_brand_logo', compressedBase64);
+      setBrandLogo(compressedBase64);
       window.dispatchEvent(new Event('brand-colors-updated'));
       setLogoUploading(false);
-    };
-    reader.onerror = () => {
+    } catch (err) {
+      console.error(err);
       setLogoUploading(false);
-    };
-    reader.readAsDataURL(file);
+    }
   };
 
   // Form Fields
@@ -65,30 +64,64 @@ export default function SpacesView() {
   const [status, setStatus] = useState<'Ativo' | 'Inativo'>('Ativo');
   const [fotos, setFotos] = useState<string[]>([]);
   const [uploadProgress, setUploadProgress] = useState<string | null>(null);
+  const [isFileUploading, setIsFileUploading] = useState(false);
   const [activePhotoIndices, setActivePhotoIndices] = useState<Record<string, number>>({});
 
-  const handleAddPhotoCard = (sp: Espaco, e: React.ChangeEvent<HTMLInputElement>) => {
+  // Pending file preview states (for verification before uploading)
+  const [pendingFileUrl, setPendingFileUrl] = useState<string | null>(null);
+  const [pendingFileName, setPendingFileName] = useState<string>('');
+  const [pendingFileSize, setPendingFileSize] = useState<number>(0);
+  const [pendingFileType, setPendingFileType] = useState<string>('');
+  const [pendingFileObj, setPendingFileObj] = useState<File | null>(null);
+
+  const clearPendingFile = () => {
+    if (pendingFileUrl) {
+      URL.revokeObjectURL(pendingFileUrl);
+    }
+    setPendingFileUrl(null);
+    setPendingFileName('');
+    setPendingFileSize(0);
+    setPendingFileType('');
+    setPendingFileObj(null);
+    
+    const inputEl = document.getElementById('space-file-input') as HTMLInputElement;
+    if (inputEl) inputEl.value = '';
+  };
+
+  // Reset pending file on modal open/close
+  useEffect(() => {
+    if (!showModal) {
+      clearPendingFile();
+    }
+  }, [showModal]);
+
+  // Cleanup object URL on unmount
+  useEffect(() => {
+    return () => {
+      if (pendingFileUrl) {
+        URL.revokeObjectURL(pendingFileUrl);
+      }
+    };
+  }, [pendingFileUrl]);
+
+  const handleAddPhotoCard = async (sp: Espaco, e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
     const file = files[0];
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      const resultString = reader.result as string;
+    try {
+      const compressedBase64 = await compressImage(file, 800, 800, 0.8);
       const currentFotos = sp.fotos || [];
-      const updatedFotos = [...currentFotos, resultString];
+      const updatedFotos = [...currentFotos, compressedBase64];
       const updatedSpace = { ...sp, fotos: updatedFotos };
-      try {
-        await saveEspaco(updatedSpace);
-        setActivePhotoIndices(prev => ({ ...prev, [sp.id]: updatedFotos.length - 1 }));
-        // Dispatch custom event to notify external listeners about database change
-        window.dispatchEvent(new Event('brand-colors-updated'));
-        loadSpaces();
-      } catch (err) {
-        console.error("Erro ao salvar foto no espaço:", err);
-      }
-    };
-    reader.readAsDataURL(file);
+      await saveEspaco(updatedSpace);
+      setActivePhotoIndices(prev => ({ ...prev, [sp.id]: updatedFotos.length - 1 }));
+      // Dispatch custom event to notify external listeners about database change
+      window.dispatchEvent(new Event('brand-colors-updated'));
+      loadSpaces();
+    } catch (err) {
+      console.error("Erro ao salvar foto no espaço:", err);
+    }
   };
 
   const handleRemovePhotoCard = async (sp: Espaco, indexToRemove: number) => {
@@ -115,6 +148,10 @@ export default function SpacesView() {
 
   useEffect(() => {
     loadSpaces();
+    window.addEventListener('es-database-updated', loadSpaces);
+    return () => {
+      window.removeEventListener('es-database-updated', loadSpaces);
+    };
   }, []);
 
   const loadSpaces = async () => {
@@ -157,26 +194,46 @@ export default function SpacesView() {
     setShowModal(true);
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileSelection = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
     const file = files[0];
+    
+    if (pendingFileUrl) {
+      URL.revokeObjectURL(pendingFileUrl);
+    }
+
+    const previewUrl = URL.createObjectURL(file);
+    setPendingFileUrl(previewUrl);
+    setPendingFileName(file.name);
+    setPendingFileSize(file.size);
+    setPendingFileType(file.type);
+    setPendingFileObj(file);
+    setUploadProgress(null);
+  };
+
+  const confirmAndUploadPendingFile = async () => {
+    if (!pendingFileObj) return;
+
+    const file = pendingFileObj;
     const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
     setUploadProgress(isPdf ? "Enviando arquivo PDF..." : "Enviando foto...");
+    setIsFileUploading(true);
 
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      const resultString = reader.result as string;
-      setFotos(prev => [...prev, resultString]);
+    try {
+      const compressedBase64 = await compressImage(file, 800, 800, 0.8);
+      setFotos(prev => [...prev, compressedBase64]);
       setUploadProgress(isPdf ? "PDF carregado com sucesso!" : "Foto carregada com sucesso!");
       setTimeout(() => setUploadProgress(null), 2000);
-    };
-    reader.onerror = () => {
+      clearPendingFile();
+    } catch (err) {
+      console.error(err);
       setUploadProgress("Falha no upload.");
       setTimeout(() => setUploadProgress(null), 2000);
-    };
-    reader.readAsDataURL(file);
+    } finally {
+      setIsFileUploading(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -226,6 +283,7 @@ export default function SpacesView() {
   };
 
   const triggerUploadInput = () => {
+    if (isFileUploading) return;
     document.getElementById('space-file-input')?.click();
   };
 
@@ -289,15 +347,24 @@ export default function SpacesView() {
             accept="image/*" 
             className="hidden" 
             onChange={handleLogoUpload}
-          />
-          <button
-            type="button"
-            onClick={() => document.getElementById('brand-logo-upload-space')?.click()}
             disabled={logoUploading}
-            className="px-4 py-2.5 bg-indigo-650 hover:bg-indigo-705 text-white rounded-xl text-xs font-bold leading-none cursor-pointer transition shadow-sm"
+          />
+          <label
+            htmlFor="brand-logo-upload-space"
+            className={`px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold leading-none cursor-pointer transition-all duration-200 shadow-md hover:shadow-indigo-500/20 active:scale-[0.98] inline-flex items-center justify-center gap-1.5 ${logoUploading ? 'opacity-60 cursor-not-allowed pointer-events-none' : ''}`}
           >
-            {logoUploading ? "Salvando..." : "Enviar Logomarca"}
-          </button>
+            {logoUploading ? (
+              <>
+                <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                <span>Salvando...</span>
+              </>
+            ) : (
+              <>
+                <Upload className="w-3.5 h-3.5" />
+                <span>Enviar Logomarca</span>
+              </>
+            )}
+          </label>
           
           <button
             type="button"
@@ -313,7 +380,7 @@ export default function SpacesView() {
 
       {loading ? (
         <div className="text-center py-24 text-gray-500">
-          <Upload className="w-8 h-8 animate-bounce mx-auto mb-2 text-indigo-505" />
+          <Upload className="w-8 h-8 animate-bounce mx-auto mb-2 text-indigo-500" />
           Buscando espaços cadastrados...
         </div>
       ) : spaces.length === 0 ? (
@@ -334,7 +401,7 @@ export default function SpacesView() {
             <div 
               key={sp.id} 
               id={`space-card-${sp.id}`}
-              className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-805 rounded-xl overflow-hidden shadow-sm hover:shadow-lg dark:hover:shadow-slate-950/70 transition-all flex flex-col justify-between"
+              className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-805 rounded-xl overflow-hidden shadow-sm hover:shadow-lg dark:hover:shadow-slate-950/70 transition-all duration-300 hover:scale-[1.02] flex flex-col justify-between"
             >
               
               {/* Media banner */}
@@ -633,17 +700,75 @@ export default function SpacesView() {
                   id="space-file-input" 
                   accept="image/*,application/pdf" 
                   className="hidden" 
-                  onChange={handleFileUpload}
+                  onChange={handleFileSelection}
+                  disabled={isFileUploading}
                 />
 
-                <div 
-                  onClick={triggerUploadInput}
-                  className="border-2 border-dashed border-gray-300 dark:border-slate-700 rounded-xl p-4 text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all flex flex-col justify-center items-center"
-                >
-                  <Upload className="w-6 h-6 text-indigo-500 mb-2 cursor-pointer" />
-                  <span className="text-xs font-bold text-gray-800 dark:text-zinc-200">Clique para enviar foto ou PDF comercial</span>
-                  <span className="text-[10px] text-gray-400 mt-1">Formato PNG, JPG ou PDF de até 10MB</span>
-                </div>
+                {pendingFileUrl ? (
+                  <div className="border-2 border-indigo-200 dark:border-indigo-900/50 bg-indigo-50/20 dark:bg-indigo-950/20 rounded-xl p-4 transition-all flex flex-col gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-16 h-16 rounded-xl overflow-hidden border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900 flex items-center justify-center shrink-0 shadow-sm relative">
+                        {pendingFileType.startsWith('application/pdf') || pendingFileName.toLowerCase().endsWith('.pdf') ? (
+                          <div className="w-full h-full flex flex-col items-center justify-center text-rose-600 bg-rose-50 dark:bg-rose-950/25">
+                            <FileText className="w-8 h-8" />
+                          </div>
+                        ) : (
+                          <img src={pendingFileUrl} alt="Preview do arquivo" className="w-full h-full object-cover" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <span className="block text-[10px] font-black uppercase tracking-wider text-indigo-650 dark:text-indigo-400">Verifique seu arquivo antes de enviar</span>
+                        <h4 className="text-xs font-bold text-gray-800 dark:text-zinc-200 truncate mt-0.5" title={pendingFileName}>
+                          {pendingFileName}
+                        </h4>
+                        <span className="text-[10px] text-gray-500 block mt-0.5 font-medium">
+                          Tamanho: {(pendingFileSize / 1024).toFixed(0)} KB
+                        </span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex items-center gap-2 pt-2 border-t border-indigo-100/50 dark:border-indigo-900/40">
+                      <button
+                        type="button"
+                        onClick={confirmAndUploadPendingFile}
+                        disabled={isFileUploading}
+                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-xs font-bold transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                      >
+                        {isFileUploading ? (
+                          <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        ) : (
+                          <Check className="w-3.5 h-3.5" />
+                        )}
+                        {isFileUploading ? "Enviando..." : "Confirmar e Enviar"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={clearPendingFile}
+                        disabled={isFileUploading}
+                        className="flex-1 flex items-center justify-center gap-1.5 px-3 py-2 bg-gray-100 hover:bg-gray-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-gray-700 dark:text-zinc-300 border border-gray-250 dark:border-slate-700 rounded-lg text-xs font-bold transition-all cursor-pointer disabled:opacity-50"
+                      >
+                        <X className="w-3.5 h-3.5 text-gray-400" />
+                        Descartar
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div 
+                    onClick={triggerUploadInput}
+                    className={`border-2 border-dashed border-gray-300 dark:border-slate-700 mt-1 rounded-xl p-4 text-center cursor-pointer hover:bg-slate-50 dark:hover:bg-slate-800/50 transition-all flex flex-col justify-center items-center ${isFileUploading ? 'opacity-50 cursor-not-allowed pointer-events-none' : ''}`}
+                  >
+                    {isFileUploading ? (
+                      <div className="w-6 h-6 border-2 border-indigo-650 border-t-transparent rounded-full animate-spin mb-2" id="space-file-spinner" />
+                    ) : (
+                      <Upload className="w-6 h-6 text-indigo-500 mb-2 cursor-pointer" />
+                    )}
+                    <span className="text-xs font-bold text-gray-800 dark:text-zinc-200 flex items-center gap-1.5 justify-center">
+                      {!isFileUploading && <Image className="w-3.5 h-3.5 text-indigo-500" />}
+                      <span>{isFileUploading ? "Processando arquivo..." : "Clique para selecionar foto ou PDF comercial"}</span>
+                    </span>
+                    <span className="text-[10px] text-gray-400 mt-1">Formato PNG, JPG ou PDF de até 10MB</span>
+                  </div>
+                )}
 
                 {uploadProgress && (
                   <p className="text-[11px] font-bold text-indigo-650 dark:text-indigo-400 mt-1">{uploadProgress}</p>

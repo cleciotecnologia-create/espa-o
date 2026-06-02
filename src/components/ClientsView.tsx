@@ -29,6 +29,10 @@ export default function ClientsView() {
 
   useEffect(() => {
     loadClientsData();
+    window.addEventListener('es-database-updated', loadClientsData);
+    return () => {
+      window.removeEventListener('es-database-updated', loadClientsData);
+    };
   }, []);
 
   const loadClientsData = async () => {

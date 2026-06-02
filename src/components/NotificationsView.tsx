@@ -73,6 +73,10 @@ export default function NotificationsView() {
 
   useEffect(() => {
     loadData();
+    window.addEventListener('es-database-updated', loadData);
+    return () => {
+      window.removeEventListener('es-database-updated', loadData);
+    };
   }, []);
 
   // Update templates when manual targets change

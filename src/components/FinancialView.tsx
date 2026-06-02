@@ -49,6 +49,10 @@ export default function FinancialView() {
 
   useEffect(() => {
     loadFinances();
+    window.addEventListener('es-database-updated', loadFinances);
+    return () => {
+      window.removeEventListener('es-database-updated', loadFinances);
+    };
   }, []);
 
   const loadFinances = async () => {
