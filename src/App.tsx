@@ -20,6 +20,7 @@ import NotificationsView from './components/NotificationsView';
 import FunnelView from './components/FunnelView';
 import SettingsView from './components/SettingsView';
 import PublicBookingView from './components/PublicBookingView';
+import UsersView from './components/UsersView';
 import { getCurrentUser, logout } from './services/firebase';
 
 export default function App() {
@@ -195,6 +196,11 @@ export default function App() {
         return <NotificationsView />;
       case 'funnel':
         return <FunnelView />;
+      case 'users':
+        if (user?.role === 'superadmin' || user?.role === 'administrador') {
+          return <UsersView />;
+        }
+        return <DashboardView onNavigateToView={handleNavigateWithContext} />;
       case 'settings':
         return <SettingsView />;
       default:
