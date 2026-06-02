@@ -4,16 +4,17 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Search, Activity, FileSpreadsheet, Check, AlertCircle, ExternalLink } from 'lucide-react';
+import { Search, Activity, FileSpreadsheet, Check, AlertCircle, ExternalLink, Menu } from 'lucide-react';
 import { getLogs, getClientes, getEspacos, getReservas } from '../services/db';
 import { ActivityLog, Cliente, Espaco, Reserva } from '../types';
 
 interface HeaderProps {
   onSearchSelect: (viewId: string, itemId: string) => void;
   onRefreshData: () => void;
+  onToggleSidebar?: () => void;
 }
 
-export default function Header({ onSearchSelect, onRefreshData }: HeaderProps) {
+export default function Header({ onSearchSelect, onRefreshData, onToggleSidebar }: HeaderProps) {
   const [logs, setLogs] = useState<ActivityLog[]>([]);
   const [showLogsDrawer, setShowLogsDrawer] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -103,51 +104,63 @@ export default function Header({ onSearchSelect, onRefreshData }: HeaderProps) {
   };
 
   return (
-    <header className="h-16 border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-6 flex items-center justify-between relative z-30">
+    <header className="h-16 border-b border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-4 sm:px-6 flex items-center justify-between relative z-30 gap-3">
       
-      {/* Quick Search */}
-      <div className="relative w-96">
-        <label htmlFor="quick-search-input" className="sr-only">Pesquisa rápida</label>
-        <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-gray-400">
-          <Search className="w-4 h-4" />
-        </div>
-        <input
-          id="quick-search-input"
-          type="text"
-          placeholder="Pesquisa rápida (espaços, clientes, reservas...)"
-          className="w-full pl-9 pr-4 py-2 border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-sm text-gray-900 dark:text-zinc-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder-gray-400 dark:placeholder-zinc-500"
-          value={searchQuery}
-          onChange={(e) => handleSearchChange(e.target.value)}
-          onFocus={loadSearchData}
-        />
+      {/* Left Menu Button + Quick Search */}
+      <div className="flex items-center gap-2.5 flex-1 min-w-0">
+        <button
+          type="button"
+          onClick={onToggleSidebar}
+          className="lg:hidden p-2 rounded-xl bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-750 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 cursor-pointer shadow-sm shrink-0"
+          title="Abrir Menu Lateral"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
 
-        {/* Search Results Dropdown */}
-        {searchResults.length > 0 && (
-          <div className="absolute left-0 mt-2 w-full max-h-80 overflow-y-auto bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-750 rounded-xl shadow-xl z-50 p-2 divide-y divide-gray-100 dark:divide-slate-800">
-            {searchResults.map((item) => (
-              <button
-                key={item.id}
-                onClick={() => handleResultClick(item)}
-                className="w-full text-left p-2.5 rounded-lg hover:bg-indigo-500 hover:text-white dark:hover:bg-slate-800 text-gray-800 dark:text-zinc-200 transition-all flex flex-col cursor-pointer mt-1"
-              >
-                <div className="text-xs font-semibold uppercase tracking-wider text-indigo-500 dark:text-indigo-400 hover:text-inherit select-none mb-0.5">
-                  {item.type === 'spaces' ? 'Espaço' : item.type === 'clients' ? 'Cliente' : 'Reserva'}
-                </div>
-                <div className="text-sm font-semibold leading-snug truncate">{item.title}</div>
-                <div className="text-[11px] opacity-75 truncate">{item.subtitle}</div>
-              </button>
-            ))}
+        {/* Quick Search */}
+        <div className="relative w-full max-w-[200px] sm:max-w-xs md:max-w-md">
+          <label htmlFor="quick-search-input" className="sr-only">Pesquisa rápida</label>
+          <div className="absolute inset-y-0 left-3 flex items-center pointer-events-none text-gray-400">
+            <Search className="w-4 h-4" />
           </div>
-        )}
+          <input
+            id="quick-search-input"
+            type="text"
+            placeholder="Pesquisa rápida..."
+            className="w-full pl-9 pr-3 py-2 border border-gray-200 dark:border-slate-700 bg-gray-50 dark:bg-slate-800 text-xs sm:text-sm text-gray-900 dark:text-zinc-100 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all placeholder-gray-400 dark:placeholder-zinc-500"
+            value={searchQuery}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            onFocus={loadSearchData}
+          />
+
+          {/* Search Results Dropdown */}
+          {searchResults.length > 0 && (
+            <div className="absolute left-0 mt-2 w-72 sm:w-80 md:w-full max-h-80 overflow-y-auto bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-750 rounded-xl shadow-xl z-50 p-2 divide-y divide-gray-100 dark:divide-slate-800">
+              {searchResults.map((item) => (
+                <button
+                  key={item.id}
+                  onClick={() => handleResultClick(item)}
+                  className="w-full text-left p-2 rounded-lg hover:bg-indigo-500 hover:text-white dark:hover:bg-slate-800 text-gray-800 dark:text-zinc-200 transition-all flex flex-col cursor-pointer mt-1"
+                >
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-indigo-500 dark:text-indigo-400 hover:text-inherit select-none mb-0.5">
+                    {item.type === 'spaces' ? 'Espaço' : item.type === 'clients' ? 'Cliente' : 'Reserva'}
+                  </div>
+                  <div className="text-xs sm:text-sm font-semibold leading-snug truncate">{item.title}</div>
+                  <div className="text-[10px] sm:text-[11px] opacity-75 truncate">{item.subtitle}</div>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Right Tools: Logs, Backups, Cloud Mode Indicator */}
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-2 sm:gap-4 shrink-0">
         {brandLogo && (
           <img 
             src={brandLogo} 
             alt="Logo do Espaço" 
-            className="h-8 max-w-[120px] object-contain rounded-lg border border-slate-100 dark:border-slate-800 p-0.5 bg-white dark:bg-slate-900 shadow-sm"
+            className="h-7 sm:h-8 max-w-[64px] xs:max-w-[100px] object-contain rounded-lg border border-slate-100 dark:border-slate-800 p-0.5 bg-white dark:bg-slate-900 shadow-sm block"
             referrerPolicy="no-referrer"
           />
         )}
@@ -157,12 +170,14 @@ export default function Header({ onSearchSelect, onRefreshData }: HeaderProps) {
           onClick={() => {
             window.location.hash = '#reserva';
           }}
-          className="px-3 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 font-extrabold text-xs flex items-center gap-1.5 transition-all border border-indigo-200/40 dark:border-indigo-900/20 cursor-pointer shadow-sm"
+          className="px-2.5 py-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 dark:bg-indigo-950/40 dark:hover:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 font-extrabold text-[10px] sm:text-xs flex items-center gap-1 sm:gap-1.5 transition-all border border-indigo-200/40 dark:border-indigo-900/20 cursor-pointer shadow-sm"
           title="Abrir o Canal de Reservas de Autoatendimento do Cliente"
         >
-          <ExternalLink className="w-3.5 h-3.5 text-indigo-505" />
-          <span>Canal de Clientes</span>
+          <ExternalLink className="w-3.5 h-3.5 text-indigo-505 shrink-0" />
+          <span className="hidden sm:inline">Canal de Clientes</span>
+          <span className="sm:hidden">Clientes</span>
         </button>
+        
         {/* Trace Activity Logs Drawer Toggle */}
         <button
           id="btn-toggle-logs-drawer"

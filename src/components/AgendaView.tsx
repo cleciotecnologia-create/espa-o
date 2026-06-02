@@ -647,18 +647,19 @@ export default function AgendaView() {
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
           
           {/* Main 7 columns monthly grid */}
-          <div className="lg:col-span-3 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-2xl overflow-hidden p-4 shadow-sm">
-            <div className="grid grid-cols-7 gap-2 mb-2 text-center text-xs font-bold uppercase tracking-wider text-gray-505 font-mono select-none">
-              <span>Dom</span>
-              <span>Seg</span>
-              <span>Ter</span>
-              <span>Qua</span>
-              <span>Qui</span>
-              <span>Sex</span>
-              <span>Sáb</span>
-            </div>
+          <div className="lg:col-span-3 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm overflow-x-auto">
+            <div className="min-w-[600px] lg:min-w-0">
+              <div className="grid grid-cols-7 gap-2 mb-2 text-center text-xs font-bold uppercase tracking-wider text-gray-550 font-mono select-none">
+                <span>Dom</span>
+                <span>Seg</span>
+                <span>Ter</span>
+                <span>Qua</span>
+                <span>Qui</span>
+                <span>Sex</span>
+                <span>Sáb</span>
+              </div>
 
-            <div className="grid grid-cols-7 gap-2">
+              <div className="grid grid-cols-7 gap-2">
               {daysArray.map((day, idx) => {
                 if (!day) {
                   return <div key={`empty-${idx}`} className="h-24 bg-slate-550/5 dark:bg-slate-900/5 rounded-xl border border-dashed border-slate-200/5 dark:border-slate-800/10"></div>;
@@ -713,6 +714,7 @@ export default function AgendaView() {
               })}
             </div>
           </div>
+        </div>
 
           {/* Quick Agenda Sidebar Guide with event list */}
           <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-2xl p-4 shadow-sm flex flex-col justify-between">

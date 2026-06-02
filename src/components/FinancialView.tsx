@@ -236,8 +236,8 @@ export default function FinancialView() {
       ) : activeTab === 'receivables' ? (
         
         /* Contas a receber table */
-        <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-805 rounded-xl shadow-sm overflow-hidden">
-          <table className="w-full text-left border-collapse">
+        <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-805 rounded-xl shadow-sm overflow-x-auto">
+          <table className="w-full text-left border-collapse min-w-[760px]">
             <thead>
               <tr className="border-b border-gray-105 dark:border-slate-800 text-[10px] uppercase font-mono text-gray-400 bg-slate-50 dark:bg-slate-950/20 py-2">
                 <th className="p-3.5 pl-5 font-bold">Reserva Vinculada</th>
@@ -314,8 +314,8 @@ export default function FinancialView() {
       ) : (
 
         /* Contas a pagar table */
-        <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-805 rounded-xl shadow-sm overflow-hidden">
-          <table className="w-full text-left border-collapse">
+        <div className="bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-805 rounded-xl shadow-sm overflow-x-auto">
+          <table className="w-full text-left border-collapse min-w-[760px]">
             <thead>
               <tr className="border-b border-gray-105 dark:border-slate-800 text-[10px] uppercase font-mono text-gray-400 bg-slate-50 dark:bg-slate-950/20 py-2">
                 <th className="p-3.5 pl-5 font-bold">Descrição da Despesa</th>

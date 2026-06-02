@@ -8,7 +8,7 @@ import {
   getSystemUsers, 
   saveSystemUser, 
   deleteSystemUser,
-  getActivityLogs
+  getLogs
 } from '../services/db';
 import { SystemUser, ActivityLog } from '../types';
 import { 
@@ -70,7 +70,7 @@ export default function UsersView() {
       const session = await getCurrentUser();
       setCurrentUserSession(session);
 
-      const allLogs = await getActivityLogs();
+      const allLogs = await getLogs();
       // Filter for logs pertaining to "Controle de Operadores" or similar user actions
       const filteredLogs = allLogs
         .filter(log => log.acao.includes('Operador') || log.acao.includes('operador') || log.acao.includes('Sessão') || log.acao.includes('Login'))

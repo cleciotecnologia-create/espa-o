@@ -215,8 +215,10 @@ export default function SettingsView() {
     reader.onloadend = () => {
       const resultString = reader.result as string;
       setBrandLogo(resultString);
+      localStorage.setItem('cfg_brand_logo', resultString);
+      window.dispatchEvent(new Event('brand-colors-updated'));
       setLogoUploading(false);
-      showToast('Logomarca carregada com sucesso! Clique em salvar para aplicar.');
+      showToast('Logomarca enviada e salva com sucesso!');
     };
     reader.onerror = () => {
       setLogoUploading(false);
@@ -1175,7 +1177,12 @@ export default function SettingsView() {
                   {brandLogo && (
                     <button
                       type="button"
-                      onClick={() => setBrandLogo('')}
+                      onClick={() => {
+                        setBrandLogo('');
+                        localStorage.removeItem('cfg_brand_logo');
+                        window.dispatchEvent(new Event('brand-colors-updated'));
+                        showToast('Logomarca removida com sucesso!');
+                      }}
                       className="px-2.5 py-2 hover:bg-rose-50 dark:hover:bg-rose-950/20 border border-slate-200 dark:border-slate-800 text-[10px] font-black uppercase text-rose-500 rounded-lg hover:border-rose-250 cursor-pointer transition-all"
                       title="Remover Logomarca atual"
                     >

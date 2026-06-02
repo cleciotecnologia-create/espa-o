@@ -12,7 +12,7 @@ import {
   signOut, 
   onAuthStateChanged 
 } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import { getFirestore, doc, getDocFromServer, collection, query, where, getDocs } from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 // Detect if we have real configured secrets or are using mock placeholders
@@ -79,21 +79,39 @@ export async function getCurrentUser(): Promise<any> {
     });
   }
 
-  // Local Dev default session initializer
-  const defaultMockUser = {
-    uid: 'clecio_admin_dev_10',
-    email: 'admin@eventspace.com.br',
-    displayName: 'Clécio Santos (Superadmin)',
-    photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&h=80&fit=crop',
-    role: 'superadmin',
-    isAnonymous: false
-  };
-  localStorage.setItem('es_user_session', JSON.stringify(defaultMockUser));
-  return defaultMockUser;
+  // Local Dev default session check: return null if not logged in to enforce login screen
+  return null;
 }
 
 export async function loginWithCredentials(emailArg: string, passwordArg: string): Promise<any> {
-  // Check our local customized system users list first
+  // 1. Try checking the "system_users" collection in Firestore if we are online
+  if (!isLocalMode && db) {
+    try {
+      const q = query(
+        collection(db, 'system_users'),
+        where('email', '==', emailArg.toLowerCase())
+      );
+      const snap = await getDocs(q);
+      if (!snap.empty) {
+        const docData = snap.docs[0].data();
+        if (docData.senhaSecreta === passwordArg) {
+          const formatted = {
+            uid: snap.docs[0].id,
+            email: docData.email,
+            displayName: docData.nome,
+            photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&h=80&fit=crop',
+            role: docData.role
+          };
+          localStorage.setItem('es_user_session', JSON.stringify(formatted));
+          return formatted;
+        }
+      }
+    } catch (e) {
+      console.warn("Erro ao buscar operador corporativo remoto:", e);
+    }
+  }
+
+  // 2. Check our local customized system users list next
   const localUsersStr = localStorage.getItem('es_system_users');
   if (localUsersStr) {
     try {
@@ -111,28 +129,33 @@ export async function loginWithCredentials(emailArg: string, passwordArg: string
         return formatted;
       }
     } catch (e) {
-      console.error("Erro ao verificar operadores customizados:", e);
+      console.error("Erro ao verificar operadores customizados locais:", e);
     }
   }
 
+  // 3. Fallback to Firebase authentication if real Auth is configured
   if (!isLocalMode && auth) {
-    const credential = await signInWithEmailAndPassword(auth, emailArg, passwordArg);
-    const formatted = {
-      uid: credential.user.uid,
-      email: credential.user.email,
-      displayName: credential.user.displayName || 'Clécio Santos',
-      photoURL: credential.user.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&h=80&fit=crop',
-      role: 'superadmin'
-    };
-    localStorage.setItem('es_user_session', JSON.stringify(formatted));
-    return formatted;
+    try {
+      const credential = await signInWithEmailAndPassword(auth, emailArg, passwordArg);
+      const formatted = {
+        uid: credential.user.uid,
+        email: credential.user.email,
+        displayName: credential.user.displayName || 'Clécio Santos',
+        photoURL: credential.user.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&h=80&fit=crop',
+        role: 'superadmin'
+      };
+      localStorage.setItem('es_user_session', JSON.stringify(formatted));
+      return formatted;
+    } catch (authError) {
+      console.warn("Firebase Auth falhou, verificando demos ou senhas customizadas:", authError);
+    }
   }
 
-  // Simulate local success matching
-  if (emailArg === 'admin@eventspace.com.br' && passwordArg === '123456') {
+  // 4. Guaranteed local fallback for demonstration mode (admin@eventspace.com.br / 123456)
+  if (emailArg.toLowerCase() === 'admin@eventspace.com.br' && passwordArg === '123456') {
     const formatted = {
       uid: 'clecio_admin_dev_10',
-      email: emailArg,
+      email: emailArg.toLowerCase(),
       displayName: 'Clécio Santos (Superadmin)',
       photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&h=80&fit=crop',
       role: 'superadmin'
