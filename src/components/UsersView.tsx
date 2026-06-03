@@ -55,6 +55,7 @@ export default function UsersView() {
   const [formEmail, setFormEmail] = useState('');
   const [formSenhaSecreta, setFormSenhaSecreta] = useState('');
   const [formRole, setFormRole] = useState<'superadmin' | 'administrador' | 'operador' | 'desenvolvedor'>('operador');
+  const [formNivelAcesso, setFormNivelAcesso] = useState<'Admin' | 'Usuário'>('Usuário');
   const [formPhotoURL, setFormPhotoURL] = useState('');
   const [formError, setFormError] = useState('');
   const [imageUploading, setImageUploading] = useState(false);
@@ -94,22 +95,38 @@ export default function UsersView() {
   };
 
   const openCreateModal = () => {
+    const userRole = currentUserSession?.role;
+    const isMasterDev = currentUserSession?.email?.toLowerCase() === 'clecioferreiracorretor@gmail.com' || userRole === 'desenvolvedor';
+    const canManage = userRole === 'superadmin' || userRole === 'administrador' || isMasterDev;
+    if (!canManage) {
+      alert('Ação bloqueada! Apenas operadores com função Superadmin ou Administrador têm permissão para cadastrar novos usuários.');
+      return;
+    }
     setEditingUser(null);
     setFormNome('');
     setFormEmail('');
     setFormSenhaSecreta('');
     setFormRole('operador');
+    setFormNivelAcesso('Usuário');
     setFormPhotoURL('');
     setFormError('');
     setIsModalOpen(true);
   };
 
   const openEditModal = (user: SystemUser) => {
+    const userRole = currentUserSession?.role;
+    const isMasterDev = currentUserSession?.email?.toLowerCase() === 'clecioferreiracorretor@gmail.com' || userRole === 'desenvolvedor';
+    const canManage = userRole === 'superadmin' || userRole === 'administrador' || isMasterDev;
+    if (!canManage) {
+      alert('Ação bloqueada! Apenas operadores com função Superadmin ou Administrador têm permissão para editar usuários.');
+      return;
+    }
     setEditingUser(user);
     setFormNome(user.nome);
     setFormEmail(user.email);
     setFormSenhaSecreta(user.senhaSecreta);
     setFormRole(user.role);
+    setFormNivelAcesso(user.nivelAcesso || (user.role === 'operador' ? 'Usuário' : 'Admin'));
     setFormPhotoURL(user.photoURL || '');
     setFormError('');
     setIsModalOpen(true);
@@ -118,6 +135,14 @@ export default function UsersView() {
   const handleSaveUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setFormError('');
+
+    const userRole = currentUserSession?.role;
+    const isMasterDev = currentUserSession?.email?.toLowerCase() === 'clecioferreiracorretor@gmail.com' || userRole === 'desenvolvedor';
+    const canManage = userRole === 'superadmin' || userRole === 'administrador' || isMasterDev;
+    if (!canManage) {
+      setFormError('Você não possui permissão de Superadmin ou Administrador para cadastrar/editar operadores.');
+      return;
+    }
 
     if (!formNome.trim()) {
       setFormError('O nome do usuário é obrigatório.');
@@ -139,12 +164,21 @@ export default function UsersView() {
       return;
     }
 
+    // Protection to make sure nobody modifies the email or the role of clecioferreiracorretor@gmail.com to something else
+    if (editingUser?.email.toLowerCase() === 'clecioferreiracorretor@gmail.com') {
+      if (formEmail.trim().toLowerCase() !== 'clecioferreiracorretor@gmail.com' || formRole !== 'desenvolvedor') {
+        setFormError('O e-mail e o papel (Dev) do desenvolvedor do sistema são protegidos e não podem ser alterados.');
+        return;
+      }
+    }
+
     try {
-      const payload: Omit<SystemUser, 'id' | 'createdAt'> & { id?: string; createdAt?: string; photoURL?: string } = {
+      const payload: Omit<SystemUser, 'id' | 'createdAt'> & { id?: string; createdAt?: string; photoURL?: string; nivelAcesso?: 'Admin' | 'Usuário' } = {
         nome: formNome.trim(),
         email: formEmail.trim().toLowerCase(),
         senhaSecreta: formSenhaSecreta,
         role: formRole,
+        nivelAcesso: formNivelAcesso,
         photoURL: formPhotoURL,
       };
 
@@ -159,6 +193,7 @@ export default function UsersView() {
             displayName: formNome.trim(),
             email: formEmail.trim().toLowerCase(),
             role: formRole,
+            nivelAcesso: formNivelAcesso,
             photoURL: formPhotoURL || currentUserSession.photoURL
           };
           localStorage.setItem('es_user_session', JSON.stringify(updatedSession));
@@ -177,6 +212,19 @@ export default function UsersView() {
   };
 
   const handleDeleteUser = async (user: SystemUser) => {
+    if (user.email.toLowerCase() === 'clecioferreiracorretor@gmail.com') {
+      alert('Ação bloqueada! O usuário desenvolvedor do sistema (clecioferreiracorretor@gmail.com) é protegido e não pode ser apagado.');
+      return;
+    }
+
+    const userRole = currentUserSession?.role;
+    const isMasterDev = currentUserSession?.email?.toLowerCase() === 'clecioferreiracorretor@gmail.com' || userRole === 'desenvolvedor';
+    const canManage = userRole === 'superadmin' || userRole === 'administrador' || isMasterDev;
+    if (!canManage) {
+      alert('Ação bloqueada! Apenas operadores com função Superadmin ou Administrador têm permissão para excluir usuários.');
+      return;
+    }
+
     if (currentUserSession && (currentUserSession.uid === user.id || currentUserSession.email === user.email)) {
       alert('Ação bloqueada! Você não pode excluir a si mesmo enquanto estiver conectado em sua sessão.');
       return;
@@ -417,10 +465,19 @@ export default function UsersView() {
                         </div>
                       )}
                       <div className="space-y-1 overflow-hidden flex-1">
-                        <span className={`px-2 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider font-sans inline-block ${getRoleBadgeStyle(usr.role)}`}>
-                          {getRoleLabel(usr.role)}
-                        </span>
-                        <h4 className="text-sm font-bold text-slate-850 dark:text-white truncate" title={usr.nome}>
+                        <div className="flex flex-wrap gap-1.5 items-center">
+                          <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider font-sans inline-block ${getRoleBadgeStyle(usr.role)}`}>
+                            {getRoleLabel(usr.role)}
+                          </span>
+                          <span className={`px-1.5 py-0.5 rounded text-[8.5px] font-black uppercase tracking-wider font-sans inline-block ${
+                            (usr.nivelAcesso || (usr.role === 'operador' ? 'Usuário' : 'Admin')) === 'Admin'
+                              ? 'bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-350 border border-amber-200/50 dark:border-amber-900/40'
+                              : 'bg-zinc-100 dark:bg-slate-800/60 text-slate-700 dark:text-zinc-300 border border-slate-200 dark:border-slate-800'
+                          }`}>
+                            {(usr.nivelAcesso || (usr.role === 'operador' ? 'Usuário' : 'Admin'))}
+                          </span>
+                        </div>
+                        <h4 className="text-sm font-bold text-slate-850 dark:text-white truncate pt-0.5" title={usr.nome}>
                           {usr.nome}
                         </h4>
                         <div className="flex items-center gap-1.5 text-xs text-gray-500 dark:text-slate-400">
@@ -692,20 +749,58 @@ export default function UsersView() {
                 </div>
               </div>
 
-              {/* Role Selection */}
-              <div>
-                <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Nível de Permissão *</label>
-                <select
-                  value={formRole}
-                  onChange={(e: any) => setFormRole(e.target.value)}
-                  className="w-full px-3 py-2.5 text-xs rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-950 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
-                >
-                  <option value="operador">Operador padrão (Apenas controle e reservas)</option>
-                  <option value="administrador">Administrador comum (Acessa geral, exceto SMTP empresarial)</option>
-                  <option value="superadmin">Super Admin (Poder total no sistema, faturamento e usuários)</option>
-                  <option value="desenvolvedor">Desenvolvedor (Acesso irrestrito e APIs de integração)</option>
-                </select>
-                <div className="mt-1.5 p-2 bg-slate-50 dark:bg-slate-950/55 rounded-lg text-[10px] text-gray-400 dark:text-zinc-400 leading-normal">
+              {/* Nível de Acesso (Admin / Usuário) and Role grid */}
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Nível de Acesso *</label>
+                    <select
+                      value={formNivelAcesso}
+                      onChange={(e: any) => {
+                        const level = e.target.value as 'Admin' | 'Usuário';
+                        setFormNivelAcesso(level);
+                        if (level === 'Admin') {
+                          setFormRole('administrador');
+                        } else {
+                          setFormRole('operador');
+                        }
+                      }}
+                      className="w-full px-3 py-2.5 text-xs font-bold rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-950 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                      <option value="Admin">🔑 Admin (Acesso Administrativo)</option>
+                      <option value="Usuário">👤 Usuário (Acesso Limitado)</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Role / Permissão do Sistema *</label>
+                    <select
+                      value={formRole}
+                      onChange={(e: any) => {
+                        const r = e.target.value;
+                        setFormRole(r);
+                        if (r === 'operador') {
+                          setFormNivelAcesso('Usuário');
+                        } else {
+                          setFormNivelAcesso('Admin');
+                        }
+                      }}
+                      className="w-full px-3 py-2.5 text-xs rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-950 dark:text-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                    >
+                      {formNivelAcesso === 'Admin' ? (
+                        <>
+                          <option value="administrador">Administrador comum (Acessa geral)</option>
+                          <option value="superadmin">Super Admin (Poder total e faturamento)</option>
+                          <option value="desenvolvedor">Desenvolvedor (Integrações e APIs)</option>
+                        </>
+                      ) : (
+                        <option value="operador">Operador padrão (Apenas controle e reservas)</option>
+                      )}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="p-2 bg-slate-50 dark:bg-slate-950/55 rounded-lg text-[10px] text-gray-400 dark:text-zinc-400 leading-normal">
                   {formRole === 'superadmin' && '⭐ Permissão máxima. Acesso a relatórios, remoções completas e auditoria.'}
                   {formRole === 'administrador' && '💼 Gerencia reservas, clientes, espaços e visualiza financeiros.'}
                   {formRole === 'operador' && '📝 Cadastro básico de propostas na agenda e visualização de clientes.'}

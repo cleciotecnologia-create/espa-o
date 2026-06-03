@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { getClientes, saveCliente, deleteCliente, getReservas } from '../services/db';
 import { formatCPFOrCNPJ, validateCPFOrCNPJ, formatPhone } from '../services/validation';
 import { Cliente, Reserva } from '../types';
-import { Plus, Edit, Trash, Users, Search, X, Check, FileCheck, CircleDollarSign, Calendar } from 'lucide-react';
+import { Plus, Edit, Trash, Users, Search, X, Check, FileCheck, CircleDollarSign, Calendar, ShieldAlert, Download, ShieldCheck, EyeOff } from 'lucide-react';
 
 export default function ClientsView() {
   const [clients, setClients] = useState<Cliente[]>([]);
@@ -26,6 +26,9 @@ export default function ClientsView() {
   const [email, setEmail] = useState('');
   const [endereco, setEndereco] = useState('');
   const [observacoes, setObservacoes] = useState('');
+  const [lgpdConsentimento, setLgpdConsentimento] = useState(true);
+  const [lgpdConsentimentoData, setLgpdConsentimentoData] = useState('');
+  const [lgpdFinalidade, setLgpdFinalidade] = useState('Gestão de reservas de salão, emissão de termos e contratos de locação e faturamento de recebíveis.');
 
   useEffect(() => {
     loadClientsData();
@@ -59,6 +62,9 @@ export default function ClientsView() {
     setEmail('');
     setEndereco('');
     setObservacoes('');
+    setLgpdConsentimento(true);
+    setLgpdConsentimentoData(new Date().toISOString().split('T')[0]);
+    setLgpdFinalidade('Gestão de reservas de salão, emissão de termos e contratos de locação e faturamento de recebíveis.');
     setShowModal(true);
   };
 
@@ -72,6 +78,9 @@ export default function ClientsView() {
     setEmail(c.email);
     setEndereco(c.endereco || '');
     setObservacoes(c.observacoes || '');
+    setLgpdConsentimento(c.lgpdConsentimento !== false); // default to true
+    setLgpdConsentimentoData(c.lgpdConsentimentoData || new Date().toISOString().split('T')[0]);
+    setLgpdFinalidade(c.lgpdFinalidade || 'Gestão de reservas de salão, emissão de termos e contratos de locação e faturamento de recebíveis.');
     setShowModal(true);
   };
 
@@ -98,7 +107,7 @@ export default function ClientsView() {
       return;
     }
 
-    const payload: Omit<Cliente, 'id' | 'createdAt'> & { id?: string } = {
+    const payload: Omit<Cliente, 'id' | 'createdAt'> & { id?: string; lgpdConsentimento?: boolean; lgpdConsentimentoData?: string; lgpdFinalidade?: string } = {
       nome,
       cpf,
       rg,
@@ -106,7 +115,10 @@ export default function ClientsView() {
       whatsapp,
       email,
       endereco,
-      observacoes
+      observacoes,
+      lgpdConsentimento,
+      lgpdConsentimentoData: lgpdConsentimento ? (lgpdConsentimentoData || new Date().toISOString().split('T')[0]) : '',
+      lgpdFinalidade: lgpdConsentimento ? lgpdFinalidade : ''
     };
 
     if (editingClient) {
@@ -119,6 +131,65 @@ export default function ClientsView() {
       loadClientsData();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleExportLGPD = (cli: Cliente) => {
+    const clientReservations = bookings.filter(b => b.clienteId === cli.id);
+    const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify({
+      relatorio: "RELATÓRIO DE PORTABILIDADE DE DADOS PESSOAIS - ART. 18, V LGPD",
+      data_geracao: new Date().toLocaleString('pt-BR'),
+      titular: {
+        nome: cli.nome,
+        cpf: cli.cpf,
+        rg: cli.rg || "Não cadastrado",
+        email: cli.email,
+        telefone: cli.telefone,
+        whatsapp: cli.whatsapp || "Não cadastrado",
+        endereco: cli.endereco || "Não cadastrado",
+        observacoes: cli.observacoes || ""
+      },
+      consentimento: {
+        autorizado: cli.lgpdConsentimento !== false,
+        data_consentimento: cli.lgpdConsentimentoData || "Não informada",
+        finalidade_legal: cli.lgpdFinalidade || "Gestão de reservas de salão e emissão de contratos"
+      },
+      reservas_vinculadas: clientReservations.map(r => ({
+        id: r.id,
+        data: r.dataEvento,
+        valor: r.valorTotal,
+        status: r.status
+      }))
+    }, null, 2));
+    const dlAnchorElem = document.createElement('a');
+    dlAnchorElem.setAttribute("href", dataStr);
+    dlAnchorElem.setAttribute("download", `portabilidade_lgpd_${cli.nome.toLowerCase().replace(/[^a-z0-9]/g, '_')}.json`);
+    dlAnchorElem.click();
+  };
+
+  const handleAnonymizeLGPD = async (cli: Cliente) => {
+    if (confirm(`⚠️ ALERTA DE DIREITO AO ESQUECIMENTO (Art. 18, VI da LGPD)\n\nIsso irá substituir todos os dados pessoais do(a) cliente "${cli.nome}" por parâmetros anonimizados irrevocáveis para fins de conformidade jurídica.\n\nAs reservas e registros financeiros vinculados serão mantidos de forma agregada para fins fiscais e de auditoria.\n\nDeseja realizar a anonimização definitiva?`)) {
+      const anonymizedPayload: Cliente = {
+        ...cli,
+        nome: `Cliente Anonimizado (${cli.id.slice(0, 4).toUpperCase()})`,
+        cpf: `***.***.***-**`,
+        rg: `**.*_._**-*`,
+        telefone: `(00) 00000-0000`,
+        whatsapp: ``,
+        email: `anonimo_${cli.id.slice(0, 6)}@eventspace_lgpd.com.br`,
+        endereco: `Registro Anonimizado (Lei 13.709)`,
+        observacoes: `Dados pessoais anonimizados em solicitação do titular em ${new Date().toLocaleDateString('pt-BR')} em conformidade com o Art. 18 da LGPD.`,
+        lgpdConsentimento: false,
+        lgpdConsentimentoData: '',
+        lgpdFinalidade: 'Retenção legal restrita com base no Art. 16, I da LGPD (cumprimento de obrigação legal/regulatória).'
+      };
+      try {
+        await saveCliente(anonymizedPayload);
+        alert('Ficha cadastral anonimizada com absoluto sucesso em conformidade com a LGPD!');
+        loadClientsData();
+      } catch (err) {
+        console.error(err);
+      }
     }
   };
 
@@ -241,20 +312,54 @@ export default function ClientsView() {
                     )}
                   </div>
 
+                 {/* LGPD Consent status tag */}
+                 <div className="mt-3 bg-slate-50 dark:bg-slate-950/20 p-2.5 rounded-lg border border-slate-100 dark:border-slate-800 flex items-center justify-between text-[11px]">
+                   <span className="text-gray-400 font-medium">Privacidade / LGPD:</span>
+                   {cli.lgpdConsentimento !== false ? (
+                     <span className="flex items-center gap-1.5 text-emerald-600 dark:text-emerald-400 font-bold">
+                       <ShieldCheck className="w-3.5 h-3.5" />
+                       Consignado (Sim)
+                     </span>
+                   ) : (
+                     <span className="flex items-center gap-1.5 text-amber-500 dark:text-amber-450 font-bold">
+                       <ShieldAlert className="w-3.5 h-3.5" />
+                       Anonimizado / Revogado
+                     </span>
+                   )}
+                 </div>
+
                 </div>
 
                 {/* Operations Footer info */}
-                <div className="mt-5 pt-3.5 border-t border-gray-100 dark:border-slate-800 flex items-center justify-between gap-2.5">
-                  <div className="flex items-center gap-1.5 text-[10px] text-gray-400 bg-slate-50 dark:bg-slate-950/30 px-2 py-1 rounded">
+                <div className="mt-5 pt-3.5 border-t border-gray-100 dark:border-slate-800 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5">
+                  <div className="flex items-center gap-1.5 text-[10px] text-gray-400 bg-slate-50 dark:bg-slate-950/30 px-2 py-1 rounded self-start">
                     <Calendar className="w-3.5 h-3.5 text-indigo-500" />
                     <span>{clientReservations.length} total • <strong className="text-emerald-600">{activeBookingsCount} confirmados</strong></span>
                   </div>
 
-                  <div className="flex gap-1">
+                  <div className="flex gap-1 self-end">
+                    <button
+                      id={`btn-export-lgpd-${cli.id}`}
+                      onClick={() => handleExportLGPD(cli)}
+                      className="p-1.5 bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-zinc-400 hover:text-indigo-600 hover:bg-slate-100 rounded-lg border border-gray-205 dark:border-slate-700 transition cursor-pointer"
+                      title="Exportar Ficha (Art. 18 Portabilidade LGPD)"
+                    >
+                      <Download className="w-3.5 h-3.5" />
+                    </button>
+                    {cli.lgpdConsentimento !== false && (
+                      <button
+                        id={`btn-anonymize-lgpd-${cli.id}`}
+                        onClick={() => handleAnonymizeLGPD(cli)}
+                        className="p-1.5 bg-slate-50 dark:bg-slate-800 text-slate-500 hover:text-amber-600 hover:bg-amber-50 dark:hover:bg-amber-950/20 rounded-lg border border-gray-205 dark:border-slate-700 transition cursor-pointer"
+                        title="Anonimizar Registro (Art. 18 Direito ao Esquecimento)"
+                      >
+                        <EyeOff className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                     <button
                       id={`btn-edit-client-${cli.id}`}
                       onClick={() => handleOpenEditModal(cli)}
-                      className="p-1.5 bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-zinc-300 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg border border-gray-205 dark:border-slate-700 transition"
+                      className="p-1.5 bg-gray-50 dark:bg-slate-800 text-gray-600 dark:text-zinc-300 hover:text-indigo-600 dark:hover:text-indigo-400 rounded-lg border border-gray-205 dark:border-slate-700 transition cursor-pointer"
                       title="Editar ficha"
                     >
                       <Edit className="w-3.5 h-3.5" />
@@ -262,7 +367,7 @@ export default function ClientsView() {
                     <button
                       id={`btn-delete-client-${cli.id}`}
                       onClick={() => handleDeleteClient(cli.id, cli.nome)}
-                      className="p-1.5 bg-rose-500/5 hover:bg-rose-500/20 text-rose-500 hover:text-rose-600 rounded-lg border border-rose-500/10 transition"
+                      className="p-1.5 bg-rose-505/5 hover:bg-rose-500/20 text-rose-500 hover:text-rose-600 rounded-lg border border-rose-500/10 transition cursor-pointer"
                       title="Excluir ficha"
                     >
                       <Trash className="w-3.5 h-3.5" />
@@ -395,12 +500,69 @@ export default function ClientsView() {
               <div>
                 <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Observações Internas</label>
                 <textarea
-                  rows={2.5}
+                  rows={2}
                   placeholder="Informe restrições Alimentares, preferências e observações diversas importantes..."
                   value={observacoes}
                   onChange={(e) => setObservacoes(e.target.value)}
                   className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-white"
                 ></textarea>
+              </div>
+
+              {/* SECTION: LGPD Compliance */}
+              <div className="bg-indigo-50/50 dark:bg-slate-950/60 p-4 rounded-xl border border-indigo-100 dark:border-slate-800 space-y-3.5 text-xs">
+                <div className="flex items-center gap-2 border-b border-indigo-100/50 dark:border-slate-800 pb-2">
+                  <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  <span className="font-bold text-slate-800 dark:text-zinc-200">Termo de Tratamento e Uso de Dados (LGPD)</span>
+                </div>
+
+                <div className="flex items-start gap-2.5">
+                  <input
+                    id="lgpd-consentimento-checkbox"
+                    type="checkbox"
+                    checked={lgpdConsentimento}
+                    onChange={(e) => {
+                      setLgpdConsentimento(e.target.checked);
+                      if (e.target.checked && !lgpdConsentimentoData) {
+                        setLgpdConsentimentoData(new Date().toISOString().split('T')[0]);
+                      }
+                    }}
+                    className="mt-0.5 w-4 h-4 text-indigo-600 border-slate-300 rounded focus:ring-indigo-550 cursor-pointer"
+                  />
+                  <div className="space-y-1">
+                    <label htmlFor="lgpd-consentimento-checkbox" className="block font-bold text-slate-700 dark:text-zinc-300 cursor-pointer">
+                      Consentimento de Coleta do Titular Autorizado *
+                    </label>
+                    <p className="text-[10px] text-slate-500 leading-normal">
+                      O contratante manifesta consentimento livre, informado e inequívoco para que seus dados identificáveis (Nome, CPF/CNPJ, RG, Telefones e E-mail) sejam processados no sistema para elaboração e assinatura de contrato administrativo de locação de pauta sob égide da Lei 13.709/18.
+                    </p>
+                  </div>
+                </div>
+
+                {lgpdConsentimento && (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 animate-fade-in text-[11px]">
+                    <div className="sm:col-span-1">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Data Consentimento</label>
+                      <input
+                        type="date"
+                        required
+                        value={lgpdConsentimentoData}
+                        onChange={(e) => setLgpdConsentimentoData(e.target.value)}
+                        className="w-full px-2.5 py-2 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                      />
+                    </div>
+                    <div className="sm:col-span-2">
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Finalidade Estrita do Tratamento</label>
+                      <input
+                        type="text"
+                        required
+                        value={lgpdFinalidade}
+                        onChange={(e) => setLgpdFinalidade(e.target.value)}
+                        placeholder="Ex: Confecção de contratos de locação temporária"
+                        className="w-full px-2.5 py-2 rounded border border-slate-200 dark:border-slate-705 bg-white dark:bg-slate-800 text-slate-900 dark:text-white"
+                      />
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Actions Footer */}

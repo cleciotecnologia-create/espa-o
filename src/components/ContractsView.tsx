@@ -178,13 +178,17 @@ export default function ContractsView({ preselectedBookingId }: ContractsViewPro
     const cancellationPct = space?.taxaCancelamento !== undefined ? space.taxaCancelamento : 10;
     const cancellationVal = (booking.valorTotal * cancellationPct) / 100;
 
+    const lessorPreamble = lessor.tipoPessoa === 'PF'
+      ? `LOCADOR: ${lessor.razaoSocial}, CPF nº ${lessor.cnpjCpf}${lessor.rg ? `, RG nº ${lessor.rg}` : ''}, com endereço residencial/operacional em ${lessor.endereco}, doravante denominado simplesmente LOCADOR.`
+      : `LOCADOR: ${lessor.razaoSocial} (Nome Fantasia: ${lessor.nomeFantasia}), inscrito no CNPJ/CPF sob nº ${lessor.cnpjCpf}${lessor.inscricaoEstadual ? `, Inscrição Estadual: ${lessor.inscricaoEstadual}` : ''}, com endereço administrativo em ${lessor.endereco}, doravante denominado simplesmente ADMINISTRADORA/LOCADOR.`;
+
     const text = `CONTRATO DE PRESTAÇÃO DE SERVIÇOS E LOCAÇÃO DE ESPAÇOS PARA EVENTOS
 
 Pelo presente instrumento particular, as partes abaixo qualificadas têm entre si justo e acordado o seguinte:
 
 I. DAS PARTES CONTRATANTES:
 
-LOCADOR: ${lessor.razaoSocial} (Nome Fantasia: ${lessor.nomeFantasia}), inscrito no CNPJ/CPF sob nº ${lessor.cnpjCpf}${lessor.inscricaoEstadual ? `, Inscrição Estadual: ${lessor.inscricaoEstadual}` : ''}, com endereço administrativo em ${lessor.endereco}, doravante denominado simplesmente ADMINISTRADORA/LOCADOR.
+${lessorPreamble}
 
 LOCATÁRIO(A):
 Nome: ${client?.nome || '_____________________________________'}

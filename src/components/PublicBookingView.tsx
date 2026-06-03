@@ -76,6 +76,7 @@ export default function PublicBookingView() {
   const [qtdConvidados, setQtdConvidados] = useState('80');
   const [observacoes, setObservacoes] = useState('');
   const [selectedSpaceId, setSelectedSpaceId] = useState('espaco_1');
+  const [consentLGPD, setConsentLGPD] = useState(false);
 
   // New booking date status validation
   const [dateStatus, setDateStatus] = useState<'idle' | 'available' | 'busy'>('idle');
@@ -449,6 +450,11 @@ ${client.nome} (LOCATÁRIO)`;
   const handleSubmitBooking = async (e: React.FormEvent) => {
     e.preventDefault();
 
+    if (!consentLGPD) {
+      alert("Para prosseguir com a solicitação de reserva, você precisa ler e aceitar o Termo de Consentimento de Uso de Dados em conformidade com a LGPD.");
+      return;
+    }
+
     if (!nome.trim() || !cpf.trim() || !endereco.trim() || !email.trim() || !telefone.trim() || !dataEvento) {
       alert("Por favor, preencha todos os campos obrigatórios (Nome, CPF, Endereço, WhatsApp e E-mail).");
       return;
@@ -468,7 +474,7 @@ ${client.nome} (LOCATÁRIO)`;
     try {
       setLoading(true);
 
-      // 1. Save New Cliente
+      // 1. Save New Cliente with LGPD constraints
       const clientPayload = {
         nome,
         cpf,
@@ -476,7 +482,10 @@ ${client.nome} (LOCATÁRIO)`;
         email,
         whatsapp: telefone,
         endereco,
-        observacoes: 'Cadastrado automaticamente via Link de Reservas Público'
+        observacoes: 'Cadastrado automaticamente via Autoatendimento Público (LGPD)',
+        lgpdConsentimento: true,
+        lgpdConsentimentoData: new Date().toISOString().split('T')[0],
+        lgpdFinalidade: 'Gestão de reservas de salão, emissão de termos e contratos de locação e faturamento de recebíveis via Autoatendimento Público.'
       };
       const clientId = await saveCliente(clientPayload);
       const fullClient: Cliente = {
@@ -753,6 +762,31 @@ ${client.nome} (LOCATÁRIO)`;
   // Form selected Space dynamic calculations
   const activeSpaces = spaces.filter(s => s.status === 'Ativo');
   const currentSelectedSpace = spaces.find(s => s.id === selectedSpaceId) || activeSpaces[0] || { valorLocacao: 450, taxaLimpeza: 50 };
+
+  // Active photo index for the selected space cover carousel
+  const [heroPhotoIndex, setHeroPhotoIndex] = useState(0);
+
+  // Reset indicator index when selected space changes
+  useEffect(() => {
+    setHeroPhotoIndex(0);
+  }, [selectedSpaceId]);
+
+  // Automatically cycle photos in the public header hero carousel if multiple photos exist
+  useEffect(() => {
+    const totalFotos = currentSelectedSpace?.fotos?.length || 0;
+    if (totalFotos <= 1) return;
+
+    const interval = setInterval(() => {
+      setHeroPhotoIndex(prev => {
+        const currentTotal = currentSelectedSpace?.fotos?.length || 0;
+        if (currentTotal <= 1) return 0;
+        return prev >= currentTotal - 1 ? 0 : prev + 1;
+      });
+    }, 4000); // cycle every 4 seconds
+
+    return () => clearInterval(interval);
+  }, [currentSelectedSpace]);
+
   const rates = getDynamicRates(selectedSpaceId, tipoEvento, dataEvento);
   const currentPrice = rates.rent;
   const currentCleaningFee = rates.cleaning;
@@ -874,29 +908,103 @@ ${client.nome} (LOCATÁRIO)`;
                 <div className="bg-gradient-to-br from-indigo-950 to-slate-900 text-white rounded-3xl p-6 sm:p-10 shadow-xl relative overflow-hidden flex flex-col md:flex-row gap-6 md:items-center">
                   <div className="absolute inset-0 opacity-15 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-400 via-indigo-950 to-slate-950"></div>
                   
-                  {/* Cover Photo */}
-                  <div 
-                    onClick={() => {
-                      if (currentSelectedSpace?.fotos?.[0]) {
-                        window.open(currentSelectedSpace.fotos[0], '_blank');
-                      }
-                    }}
-                    className={`w-full md:w-52 h-40 rounded-2xl overflow-hidden shadow-md border border-white/10 flex-shrink-0 relative group ${currentSelectedSpace?.fotos?.[0] ? 'cursor-pointer hover:opacity-90' : ''}`}
-                  >
-                    {isPdfFile(currentSelectedSpace?.fotos?.[0]) ? (
-                      <div className="w-full h-full flex flex-col items-center justify-center bg-rose-500/20 text-rose-300 p-3 select-none">
-                        <FileText className="w-10 h-10 mb-1 text-rose-450" />
-                        <span className="text-[10px] font-black uppercase tracking-wider text-center text-rose-300">Apresentação PDF</span>
-                        <span className="text-[8px] text-slate-300 mt-0.5">Clique p/ abrir</span>
+                  {/* Cover Photo - Dynamic Slide Carousel (Auto-rolls and allows interactive sliding) */}
+                  {(() => {
+                    const spFotos = currentSelectedSpace?.fotos || [];
+                    const totalFotos = spFotos.length;
+                    
+                    // Guarantee normalized bounds
+                    const normalizedIndex = heroPhotoIndex < totalFotos ? heroPhotoIndex : 0;
+                    const currentSrc = spFotos[normalizedIndex] || "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&q=80&w=800";
+                    const isPdf = isPdfFile(currentSrc);
+
+                    return (
+                      <div 
+                        className="w-full md:w-52 h-40 rounded-2xl overflow-hidden shadow-md border border-white/10 flex-shrink-0 relative group text-center"
+                      >
+                        {/* Slide Content */}
+                        <div 
+                          className="w-full h-full cursor-pointer hover:opacity-95 transition-opacity"
+                          onClick={() => {
+                            window.open(currentSrc, '_blank');
+                          }}
+                        >
+                          {isPdf ? (
+                            <div className="w-full h-full flex flex-col items-center justify-center bg-rose-500/25 text-rose-300 p-3 select-none animate-fade-in">
+                              <FileText className="w-10 h-10 mb-1 text-rose-400" />
+                              <span className="text-[10px] font-black uppercase tracking-wider text-center text-rose-300">Apresentação PDF</span>
+                              <span className="text-[8px] text-slate-350 mt-0.5">Clique p/ abrir mídia</span>
+                            </div>
+                          ) : (
+                            <img 
+                              src={currentSrc} 
+                              alt={`${currentSelectedSpace?.nome || 'Espaço'} - Foto ${normalizedIndex + 1}`} 
+                              referrerPolicy="no-referrer"
+                              className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                            />
+                          )}
+                        </div>
+
+                        {/* Interactive Slide/Manual controls */}
+                        {totalFotos > 1 && (
+                          <>
+                            {/* Left Navigation Chevron Button */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const prev = normalizedIndex === 0 ? totalFotos - 1 : normalizedIndex - 1;
+                                setHeroPhotoIndex(prev);
+                              }}
+                              className="absolute left-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-slate-950/80 text-white border border-white/10 hover:bg-slate-900 transition-all opacity-0 group-hover:opacity-100 cursor-pointer z-20 hover:scale-110"
+                              title="Foto anterior"
+                            >
+                              <ChevronLeft className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Right Navigation Chevron Button */}
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                const next = normalizedIndex === totalFotos - 1 ? 0 : normalizedIndex + 1;
+                                setHeroPhotoIndex(next);
+                              }}
+                              className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-slate-950/80 text-white border border-white/10 hover:bg-slate-900 transition-all opacity-0 group-hover:opacity-100 cursor-pointer z-20 hover:scale-110"
+                              title="Próxima foto"
+                            >
+                              <ChevronRight className="w-3.5 h-3.5" />
+                            </button>
+
+                            {/* Bullet dots indicator tray */}
+                            <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-slate-950/60 px-2 py-1 rounded-full z-20 select-none">
+                              {spFotos.map((_, dotIdx) => (
+                                <button
+                                  key={dotIdx}
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setHeroPhotoIndex(dotIdx);
+                                  }}
+                                  className={`h-1.5 rounded-full transition-all duration-300 ${
+                                    dotIdx === normalizedIndex 
+                                      ? 'w-3 bg-indigo-400' 
+                                      : 'w-1.5 bg-white/40 hover:bg-white/70'
+                                  }`}
+                                  title={`Ir para foto ${dotIdx + 1}`}
+                                />
+                              ))}
+                            </div>
+
+                            {/* Text badge index overlay */}
+                            <div className="absolute top-2 right-2 bg-slate-950/70 p-1 py-0.5 rounded text-[8px] font-mono font-bold text-slate-300 tracking-wider pointer-events-none select-none">
+                              {normalizedIndex + 1} / {totalFotos}
+                            </div>
+                          </>
+                        )}
                       </div>
-                    ) : (
-                      <img 
-                        src={currentSelectedSpace?.fotos?.[0] || "https://images.unsplash.com/photo-1519167758481-83f550bb49b3?auto=format&fit=crop&q=80&w=800"} 
-                        alt="Espaço Escolhido" 
-                        className="w-full h-full object-cover transition-transform group-hover:scale-105"
-                      />
-                    )}
-                  </div>
+                    );
+                  })()}
 
                   <div className="space-y-3.5 z-10 flex-1">
                     <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-500/20 text-amber-300 rounded-full border border-amber-500/10 text-[10px] uppercase font-black tracking-widest leading-none">
@@ -1286,6 +1394,28 @@ ${client.nome} (LOCATÁRIO)`;
                       </div>
                       <div className="text-right font-mono font-black text-emerald-600 dark:text-emerald-400 text-sm">
                         R$ {currentSinal.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* LGPD PUBLIC PORTAL CHECKBOX PANEL */}
+                  <div className="md:col-span-2 bg-indigo-50/50 dark:bg-slate-950/40 p-4 rounded-2xl border border-indigo-100/50 dark:border-slate-800 space-y-3">
+                    <div className="flex items-start gap-3">
+                      <input
+                        id="public-lgpd-checkbox"
+                        type="checkbox"
+                        checked={consentLGPD}
+                        onChange={(e) => setConsentLGPD(e.target.checked)}
+                        className="mt-1 w-5 h-5 text-indigo-650 border-slate-300 rounded focus:ring-indigo-600 cursor-pointer"
+                      />
+                      <div className="text-xs space-y-1">
+                        <label htmlFor="public-lgpd-checkbox" className="font-black text-slate-850 dark:text-zinc-200 select-none cursor-pointer flex items-center gap-1.5">
+                          <ShieldCheck className="w-4 h-4 text-indigo-600 dark:text-indigo-450" />
+                          Consentimento de Privacidade de Dados (Lei 13.709/18) *
+                        </label>
+                        <p className="text-[11px] text-slate-500 dark:text-neutral-400 leading-relaxed">
+                          Ao solicitar a reserva de pauta, eu declaro consentimento livre para preenchimento e armazenamento dos meus dados pessoais essenciais (Nome, CPF/CNPJ, E-mail, Telefones e Endereço) com a finalidade única de confecção de contratos de locação física e controle de pautas de reservas. Nossos sistemas cumprem as boas práticas de segurança contra vazamentos de dados regulados pela LGPD.
+                        </p>
                       </div>
                     </div>
                   </div>

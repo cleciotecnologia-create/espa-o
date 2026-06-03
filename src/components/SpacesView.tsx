@@ -5,9 +5,10 @@
 
 import React, { useState, useEffect } from 'react';
 import { getEspacos, saveEspaco, deleteEspaco } from '../services/db';
-import { Espaco } from '../types';
-import { Plus, Edit, Trash, Image, Check, X, AlertTriangle, Eye, Upload, FileText, ChevronLeft, ChevronRight, Trash2, Camera } from 'lucide-react';
+import { Espaco, LessorConfigs } from '../types';
+import { Plus, Edit, Trash, Image, Check, X, AlertTriangle, Eye, Upload, FileText, ChevronLeft, ChevronRight, Trash2, Camera, User, Sliders } from 'lucide-react';
 import { compressImage } from '../utils/image';
+import { getLessorConfigs, saveLessorConfigs } from '../services/notifications';
 
 const isPdfFile = (src?: string) => {
   if (!src) return false;
@@ -54,6 +55,10 @@ export default function SpacesView() {
   };
 
   // Form Fields
+  const [showLessorModal, setShowLessorModal] = useState(false);
+  const [lessorData, setLessorData] = useState<LessorConfigs>(() => getLessorConfigs());
+  const [saveLessorSuccess, setSaveLessorSuccess] = useState(false);
+
   const [nome, setNome] = useState('');
   const [capacidade, setCapacidade] = useState(80);
   const [valorLocacao, setValorLocacao] = useState(3000);
@@ -103,6 +108,32 @@ export default function SpacesView() {
       }
     };
   }, [pendingFileUrl]);
+
+  // Auto-advance photos for active Spaces cards with more than 1 photo
+  useEffect(() => {
+    if (spaces.length === 0) return;
+
+    const interval = setInterval(() => {
+      setActivePhotoIndices(prev => {
+        const nextIndices = { ...prev };
+        let changed = false;
+
+        spaces.forEach(sp => {
+          const total = sp.fotos?.length || 0;
+          if (total > 1) {
+            const current = nextIndices[sp.id] !== undefined ? nextIndices[sp.id] : 0;
+            const next = current === total - 1 ? 0 : current + 1;
+            nextIndices[sp.id] = next;
+            changed = true;
+          }
+        });
+
+        return changed ? nextIndices : prev;
+      });
+    }, 4500); // Rotate every 4.5 seconds
+
+    return () => clearInterval(interval);
+  }, [spaces]);
 
   const handleAddPhotoCard = async (sp: Espaco, e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -282,6 +313,40 @@ export default function SpacesView() {
     }
   };
 
+  const handleSaveLessorData = (e: React.FormEvent) => {
+    e.preventDefault();
+    const updated = { ...lessorData };
+    if (!updated.tipoPessoa) {
+      updated.tipoPessoa = 'PJ';
+    }
+    if (updated.tipoPessoa === 'PF') {
+      if (!updated.representanteNome) {
+        updated.representanteNome = updated.razaoSocial;
+      }
+      if (!updated.representanteCpf) {
+        updated.representanteCpf = updated.cnpjCpf;
+      }
+    }
+    saveLessorConfigs(updated);
+    setLessorData(updated);
+    
+    // Propagate changes
+    window.dispatchEvent(new Event('brand-colors-updated'));
+    window.dispatchEvent(new Event('es-database-updated'));
+    
+    setSaveLessorSuccess(true);
+    setTimeout(() => {
+      setSaveLessorSuccess(false);
+      setShowLessorModal(false);
+    }, 1500);
+  };
+
+  useEffect(() => {
+    if (showLessorModal) {
+      setLessorData(getLessorConfigs());
+    }
+  }, [showLessorModal]);
+
   const triggerUploadInput = () => {
     if (isFileUploading) return;
     document.getElementById('space-file-input')?.click();
@@ -296,14 +361,28 @@ export default function SpacesView() {
           <h2 className="text-2xl font-bold text-gray-900 dark:text-white leading-tight">Gestão de Espaços</h2>
           <p className="text-sm text-gray-500 dark:text-zinc-400">Cadastre e configure os salões de festa, chácaras e buffets da sua empresa.</p>
         </div>
-        <button
-          id="btn-add-space"
-          onClick={openAddModal}
-          className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-750 text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-md shadow-indigo-600/10 cursor-pointer hover:scale-101 transition-all"
-        >
-          <Plus className="w-4 h-4" />
-          <span>Novo Espaço</span>
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            id="btn-edit-lessor"
+            type="button"
+            onClick={() => setShowLessorModal(true)}
+            className="flex items-center gap-2 bg-emerald-650 hover:bg-emerald-700 text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-md shadow-emerald-600/10 cursor-pointer hover:scale-101 transition-all"
+            title="Editar dados do dono do salão / locador para os contratos inteligentes"
+          >
+            <User className="w-4 h-4 text-emerald-100" />
+            <span>Dados do Locador</span>
+          </button>
+
+          <button
+            id="btn-add-space"
+            type="button"
+            onClick={openAddModal}
+            className="flex items-center gap-2 bg-indigo-600 hover:bg-indigo-750 text-white px-4 py-2.5 rounded-xl text-sm font-semibold shadow-md shadow-indigo-600/10 cursor-pointer hover:scale-101 transition-all"
+          >
+            <Plus className="w-4 h-4" />
+            <span>Novo Espaço</span>
+          </button>
+        </div>
       </div>
 
       {/* Brand Logo Integration Card */}
@@ -416,95 +495,117 @@ export default function SpacesView() {
 
                   return (
                     <div className="w-full h-full relative">
-                      {isPdf ? (
-                        <div className="w-full h-full flex flex-col items-center justify-center bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-450 p-4 select-none">
-                          <FileText className="w-12 h-12 mb-1" />
-                          <span className="text-xs font-bold uppercase tracking-wider">Apresentação PDF ({normalizedIndex + 1}/{totalFotos || 1})</span>
-                          <span className="text-[10px] text-gray-400 mt-1">Clique no olho para abrir</span>
-                        </div>
-                      ) : (
-                        <img 
-                          src={currentSrc} 
-                          alt={`${sp.nome} - Foto ${normalizedIndex + 1}`} 
-                          referrerPolicy="no-referrer"
-                          className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                        />
-                      )}
-
-                      {/* Photo actions overlay inside group hover */}
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all flex flex-col justify-between p-3 opacity-0 group-hover:opacity-100 z-10">
-                        {/* Upper row: view and delete current photo */}
-                        <div className="flex justify-between items-center w-full">
-                          <button
-                            type="button"
-                            onClick={() => window.open(currentSrc, '_blank')}
-                            className="p-1.5 bg-white/90 dark:bg-slate-900/90 hover:bg-white text-slate-800 dark:text-white rounded-lg shadow-sm transition hover:scale-110 cursor-pointer"
-                            title="Visualizar mídia em tela cheia"
-                          >
-                            <Eye className="w-3.5 h-3.5" />
-                          </button>
-
-                          <div className="flex items-center gap-1.5">
-                            {/* Option to ADD a photo directly */}
-                            <label className="p-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm transition hover:scale-110 cursor-pointer" title="Adicionar Foto diretamente">
-                              <Camera className="w-3.5 h-3.5" />
-                              <input 
-                                type="file" 
-                                accept="image/*,application/pdf" 
-                                className="hidden" 
-                                onChange={(e) => handleAddPhotoCard(sp, e)} 
-                              />
-                            </label>
-
-                            {/* Option to REMOVE the active photo */}
-                            {totalFotos > 0 && (
-                              <button
-                                type="button"
-                                onClick={() => handleRemovePhotoCard(sp, normalizedIndex)}
-                                className="p-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg shadow-sm transition hover:scale-110 cursor-pointer"
-                                title="Remover esta foto / arquivo"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        </div>
-
-                        {/* Middle row: Carousel controls if > 1 page */}
-                        {totalFotos > 1 ? (
-                          <div className="flex justify-between items-center w-full px-1">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const prev = normalizedIndex === 0 ? totalFotos - 1 : normalizedIndex - 1;
-                                setActivePhotoIndices(p => ({ ...p, [sp.id]: prev }));
-                              }}
-                              className="p-1 bg-white/95 dark:bg-slate-900/95 text-slate-800 dark:text-white rounded-full shadow hover:bg-white transition-all transform hover:scale-105 cursor-pointer"
-                            >
-                              <ChevronLeft className="w-4 h-4" />
-                            </button>
-                            <span className="text-[10px] text-white font-extrabold bg-slate-950/70 py-0.5 px-2 rounded-full font-mono">
-                              {normalizedIndex + 1} / {totalFotos}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const next = normalizedIndex === totalFotos - 1 ? 0 : normalizedIndex + 1;
-                                setActivePhotoIndices(p => ({ ...p, [sp.id]: next }));
-                              }}
-                              className="p-1 bg-white/95 dark:bg-slate-900/95 text-slate-800 dark:text-white rounded-full shadow hover:bg-white transition-all transform hover:scale-105 cursor-pointer"
-                            >
-                              <ChevronRight className="w-4 h-4" />
-                            </button>
+                      {/* Image/PDF view */}
+                      <div className="w-full h-full">
+                        {isPdf ? (
+                          <div className="w-full h-full flex flex-col items-center justify-center bg-rose-50 dark:bg-rose-950/20 text-rose-600 dark:text-rose-450 p-4 select-none">
+                            <FileText className="w-12 h-12 mb-1" />
+                            <span className="text-xs font-bold uppercase tracking-wider">Apresentação PDF ({normalizedIndex + 1}/{totalFotos || 1})</span>
+                            <span className="text-[10px] text-gray-400 mt-1">Clique no olho para abrir</span>
                           </div>
                         ) : (
-                          <div className="flex justify-center">
-                            <span className="text-[9px] text-white/70 bg-slate-950/50 py-0.5 px-1.5 rounded font-medium select-none font-sans">
-                              {totalFotos} mídias • Passe o mouse para gerenciar
-                            </span>
-                          </div>
+                          <img 
+                            src={currentSrc} 
+                            alt={`${sp.nome} - Foto ${normalizedIndex + 1}`} 
+                            referrerPolicy="no-referrer"
+                            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+                          />
                         )}
                       </div>
+
+                      {/* Photo actions overlay (Eye, Camera, Trash) - visible on hover */}
+                      <div className="absolute inset-x-0 top-0 bg-gradient-to-b from-black/60 to-transparent p-3 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-20 flex justify-between items-center">
+                        <button
+                          type="button"
+                          onClick={() => window.open(currentSrc, '_blank')}
+                          className="p-1.5 bg-white/90 dark:bg-slate-900/90 hover:bg-white text-slate-800 dark:text-white rounded-lg shadow-sm transition hover:scale-110 cursor-pointer"
+                          title="Visualizar mídia em tela cheia"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                        </button>
+
+                        <div className="flex items-center gap-1.5">
+                          {/* Option to ADD a photo directly */}
+                          <label className="p-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg shadow-sm transition hover:scale-110 cursor-pointer text-center flex items-center justify-center" title="Adicionar Foto diretamente">
+                            <Camera className="w-3.5 h-3.5" />
+                            <input 
+                              type="file" 
+                              accept="image/*,application/pdf" 
+                              className="hidden" 
+                              onChange={(e) => handleAddPhotoCard(sp, e)} 
+                            />
+                          </label>
+
+                          {/* Option to REMOVE the active photo */}
+                          {totalFotos > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemovePhotoCard(sp, normalizedIndex)}
+                              className="p-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg shadow-sm transition hover:scale-110 cursor-pointer"
+                              title="Remover esta foto / arquivo"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Carousel Arrow Controls - Left & Right (positioned nicely, semi-transparent & fully visible on hover) */}
+                      {totalFotos > 1 && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const prev = normalizedIndex === 0 ? totalFotos - 1 : normalizedIndex - 1;
+                              setActivePhotoIndices(p => ({ ...p, [sp.id]: prev }));
+                            }}
+                            className="absolute left-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-slate-950/75 text-white border border-white/10 hover:bg-slate-900 transition-all opacity-40 hover:opacity-100 sm:opacity-0 sm:group-hover:opacity-75 sm:hover:!opacity-100 cursor-pointer z-20 hover:scale-110 shadow"
+                            title="Foto anterior"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const next = normalizedIndex === totalFotos - 1 ? 0 : normalizedIndex + 1;
+                              setActivePhotoIndices(p => ({ ...p, [sp.id]: next }));
+                            }}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 rounded-full bg-slate-950/75 text-white border border-white/10 hover:bg-slate-900 transition-all opacity-40 hover:opacity-100 sm:opacity-0 sm:group-hover:opacity-75 sm:hover:!opacity-100 cursor-pointer z-20 hover:scale-110 shadow"
+                            title="Próxima foto"
+                          >
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+                        </>
+                      )}
+
+                      {/* Bullet dots indicator tray at bottom-left */}
+                      {totalFotos > 1 ? (
+                        <div className="absolute bottom-3 left-4 flex items-center gap-1 bg-slate-950/65 px-2 py-1 rounded-full z-20 select-none border border-white/5 shadow-sm">
+                          {spFotos.map((_, dotIdx) => (
+                            <button
+                              key={dotIdx}
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setActivePhotoIndices(p => ({ ...p, [sp.id]: dotIdx }));
+                              }}
+                              className={`h-1.5 rounded-full transition-all duration-300 ${
+                                dotIdx === normalizedIndex 
+                                  ? 'w-3 bg-indigo-400' 
+                                  : 'w-1.5 bg-white/40 hover:bg-white/75'
+                              }`}
+                              title={`Ir para foto ${dotIdx + 1}`}
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="absolute bottom-3 left-4 bg-slate-950/50 py-0.5 px-2 rounded-full border border-white/5 text-[9px] text-white/80 font-medium select-none z-20">
+                          {totalFotos} {totalFotos === 1 ? 'mídia' : 'sem mídias'}
+                        </div>
+                      )}
                     </div>
                   );
                 })()}
@@ -817,6 +918,226 @@ export default function SpacesView() {
                   className="px-5 py-2 bg-indigo-600 hover:bg-indigo-750 text-white text-xs font-bold rounded-lg cursor-pointer"
                 >
                   Salvar Espaço
+                </button>
+              </div>
+
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Lessor Modal (Dono do Salão) */}
+      {showLessorModal && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4">
+          <div className="bg-white dark:bg-slate-900 border border-gray-250 dark:border-slate-800 p-6 rounded-2xl w-full max-w-xl shadow-2xl animate-scale-up max-h-[92vh] overflow-y-auto">
+            <div className="flex justify-between items-center pb-4 border-b border-gray-100 dark:border-slate-800">
+              <div className="flex items-center gap-2">
+                <Sliders className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
+                <div>
+                  <h3 className="text-md font-bold text-gray-900 dark:text-white">
+                    Alterar Dados Cadastrais do Locador
+                  </h3>
+                  <p className="text-[11px] text-gray-450 dark:text-gray-500 leading-tight">Dono do Salão / Representante de Cobrança e Contratos</p>
+                </div>
+              </div>
+              <button 
+                type="button"
+                onClick={() => setShowLessorModal(false)}
+                className="text-gray-400 hover:text-gray-900 dark:hover:text-white p-1 hover:bg-gray-100 dark:hover:bg-slate-800 rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveLessorData} className="space-y-4 mt-4">
+              
+              {/* Type selector */}
+              <div className="p-3 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-slate-100 dark:border-slate-800 space-y-1.5">
+                <label className="block text-[10px] font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wider">Tipo de Contribuinte / Pessoa</label>
+                <div className="flex gap-4">
+                  <button
+                    type="button"
+                    onClick={() => setLessorData({ ...lessorData, tipoPessoa: 'PJ' })}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition cursor-pointer ${
+                      (lessorData.tipoPessoa || 'PJ') === 'PJ'
+                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                        : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 bg-transparent hover:bg-slate-100 dark:hover:bg-slate-900 bg-white dark:bg-slate-900'
+                    }`}
+                  >
+                    Pessoa Jurídica (PJ/Empresa)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setLessorData({ ...lessorData, tipoPessoa: 'PF' })}
+                    className={`flex-1 py-1.5 text-xs font-bold rounded-lg border transition cursor-pointer ${
+                      lessorData.tipoPessoa === 'PF'
+                        ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                        : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 bg-transparent hover:bg-slate-100 dark:hover:bg-slate-900 bg-white dark:bg-slate-900'
+                    }`}
+                  >
+                    Pessoa Física (PF/Proprietário)
+                  </button>
+                </div>
+              </div>
+
+              {/* Form inputs */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                
+                {/* Razão Social / Nome completo */}
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">
+                    {lessorData.tipoPessoa === 'PF' ? 'Nome Completo do Locador (PF) *' : 'Razão Social (PJ) *'}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder={lessorData.tipoPessoa === 'PF' ? "EX: Clécio Ferreira dos Santos" : "EX: EVENTSPACE ERP GESTÃO DE ESPAÇOS LTDA"}
+                    value={lessorData.razaoSocial || ''}
+                    onChange={(e) => setLessorData({ ...lessorData, razaoSocial: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-755 bg-slate-50 dark:bg-slate-950 text-xs font-bold rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </div>
+
+                {/* Nome fantasia */}
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">
+                    {lessorData.tipoPessoa === 'PF' ? 'Nome do Salão ou Espaço *' : 'Nome Fantasia / Marca *'}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="EX: Chácara Recanto Verde / Buffet Delícia"
+                    value={lessorData.nomeFantasia || ''}
+                    onChange={(e) => setLessorData({ ...lessorData, nomeFantasia: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-755 bg-slate-50 dark:bg-slate-950 text-xs font-bold rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </div>
+
+                {/* CNPJ or CPF */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">
+                    {lessorData.tipoPessoa === 'PF' ? 'CPF do Locador *' : 'CNPJ do Locador *'}
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder={lessorData.tipoPessoa === 'PF' ? "000.000.000-00" : "00.000.000/0001-00"}
+                    value={lessorData.cnpjCpf || ''}
+                    onChange={(e) => setLessorData({ ...lessorData, cnpjCpf: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-755 bg-slate-50 dark:bg-slate-950 text-xs font-mono font-bold rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </div>
+
+                {/* RG or IE */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">
+                    {lessorData.tipoPessoa === 'PF' ? 'RG do Locador' : 'Inscrição Estadual'}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={lessorData.tipoPessoa === 'PF' ? "00.000.000-0" : "Isento ou nº estadual"}
+                    value={lessorData.tipoPessoa === 'PF' ? (lessorData.rg || '') : (lessorData.inscricaoEstadual || '')}
+                    onChange={(e) => {
+                      if (lessorData.tipoPessoa === 'PF') {
+                        setLessorData({ ...lessorData, rg: e.target.value });
+                      } else {
+                        setLessorData({ ...lessorData, inscricaoEstadual: e.target.value });
+                      }
+                    }}
+                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-755 bg-slate-50 dark:bg-slate-950 text-xs font-bold rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </div>
+
+                {/* Telefone */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Telefone / WhatsApp *</label>
+                  <input
+                    type="tel"
+                    required
+                    placeholder="(11) 99999-9999"
+                    value={lessorData.telefone || ''}
+                    onChange={(e) => setLessorData({ ...lessorData, telefone: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-755 bg-slate-50 dark:bg-slate-950 text-xs font-bold rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </div>
+
+                {/* Email */}
+                <div>
+                  <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">E-mail de Contato *</label>
+                  <input
+                    type="email"
+                    required
+                    placeholder="financeiro@empresa.com"
+                    value={lessorData.email || ''}
+                    onChange={(e) => setLessorData({ ...lessorData, email: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-755 bg-slate-50 dark:bg-slate-950 text-xs font-mono font-bold rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </div>
+
+                {/* Endereço */}
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Endereço Administrativo Completo *</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Rua, Número, Bairro, Cidade - UF, CEP"
+                    value={lessorData.endereco || ''}
+                    onChange={(e) => setLessorData({ ...lessorData, endereco: e.target.value })}
+                    className="w-full px-3 py-2 border border-slate-200 dark:border-slate-755 bg-slate-50 dark:bg-slate-950 text-xs font-bold rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  />
+                </div>
+
+                {/* PJ Legal Representative */}
+                {(lessorData.tipoPessoa || 'PJ') === 'PJ' && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Representante Legal (Nome) *</label>
+                      <input
+                        type="text"
+                        required={(lessorData.tipoPessoa || 'PJ') === 'PJ'}
+                        placeholder="EX: Clécio Ferreira"
+                        value={lessorData.representanteNome || ''}
+                        onChange={(e) => setLessorData({ ...lessorData, representanteNome: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-200 dark:border-slate-755 bg-slate-50 dark:bg-slate-950 text-xs font-bold rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Representante CPF *</label>
+                      <input
+                        type="text"
+                        required={(lessorData.tipoPessoa || 'PJ') === 'PJ'}
+                        placeholder="000.000.000-00"
+                        value={lessorData.representanteCpf || ''}
+                        onChange={(e) => setLessorData({ ...lessorData, representanteCpf: e.target.value })}
+                        className="w-full px-3 py-2 border border-slate-200 dark:border-slate-755 bg-slate-50 dark:bg-slate-950 text-xs font-mono font-bold rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                      />
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Success Notification Alert Inside the modal */}
+              {saveLessorSuccess && (
+                <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-250 text-emerald-800 dark:text-emerald-400 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 animate-fade-in">
+                  <Check className="w-4 h-4 text-emerald-500" />
+                  <span>Dados Cadastrais Atualizados com Sucesso!</span>
+                </div>
+              )}
+
+              {/* Actions Footer */}
+              <div className="pt-4 border-t border-gray-150 dark:border-slate-850 flex justify-end gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowLessorModal(false)}
+                  className="px-4 py-2 bg-gray-50 dark:bg-slate-800 hover:bg-gray-100 text-gray-700 dark:text-zinc-300 border border-gray-200 dark:border-slate-700 text-xs font-bold rounded-lg cursor-pointer transition"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg cursor-pointer transition shadow-sm hover:shadow-emerald-500/10"
+                >
+                  Salvar Alterações
                 </button>
               </div>
 

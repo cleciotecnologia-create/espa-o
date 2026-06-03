@@ -14,6 +14,9 @@ export interface Cliente {
   endereco?: string;
   observacoes?: string;
   createdAt: string;
+  lgpdConsentimento?: boolean;
+  lgpdConsentimentoData?: string;
+  lgpdFinalidade?: string;
 }
 
 export interface Espaco {
@@ -29,7 +32,7 @@ export interface Espaco {
   status: 'Ativo' | 'Inativo';
 }
 
-export type StatusReserva = 'Orçamento' | 'Aguardando sinal' | 'Confirmado' | 'Realizado' | 'Cancelado';
+export type StatusReserva = 'Orçamento' | 'Aguardando sinal' | 'Confirmado' | 'Realizado' | 'Cancelado' | 'Bloqueado';
 
 export interface Reserva {
   id: string;
@@ -116,6 +119,8 @@ export interface LessorConfigs {
   endereco: string;
   representanteNome: string;
   representanteCpf: string;
+  tipoPessoa?: 'PF' | 'PJ';
+  rg?: string;
 }
 
 export interface SystemUser {
@@ -124,6 +129,7 @@ export interface SystemUser {
   email: string;
   senhaSecreta: string;
   role: 'superadmin' | 'administrador' | 'operador' | 'desenvolvedor';
+  nivelAcesso?: 'Admin' | 'Usuário';
   createdAt: string;
   photoURL?: string;
 }

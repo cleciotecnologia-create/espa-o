@@ -63,12 +63,14 @@ export async function getCurrentUser(): Promise<any> {
       const unsubscribe = onAuthStateChanged(auth, (usr) => {
         unsubscribe();
         if (usr) {
+          const userEmail = usr.email?.toLowerCase();
+          const targetRole = userEmail === 'clecioferreiracorretor@gmail.com' ? 'desenvolvedor' : 'superadmin';
           const formatted = {
             uid: usr.uid,
             email: usr.email,
-            displayName: usr.displayName || 'Clécio Santos',
+            displayName: usr.displayName || (userEmail === 'clecioferreiracorretor@gmail.com' ? 'Clécio Ferreira (Dev)' : 'Clécio Santos'),
             photoURL: usr.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&h=80&fit=crop',
-            role: 'superadmin'
+            role: targetRole
           };
           localStorage.setItem('es_user_session', JSON.stringify(formatted));
           resolve(formatted);
@@ -151,14 +153,14 @@ export async function loginWithCredentials(emailArg: string, passwordArg: string
     }
   }
 
-  // 4. Guaranteed local fallback for demonstration mode (admin@eventspace.com.br / 123456)
-  if (emailArg.toLowerCase() === 'admin@eventspace.com.br' && passwordArg === '123456') {
+  // 4. Guaranteed local fallback for demonstration mode (clecioferreiracorretor@gmail.com / 123456)
+  if (emailArg.toLowerCase() === 'clecioferreiracorretor@gmail.com' && passwordArg === '123456') {
     const formatted = {
-      uid: 'clecio_admin_dev_10',
+      uid: 'clecio_master_dev_99',
       email: emailArg.toLowerCase(),
-      displayName: 'Clécio Santos (Superadmin)',
+      displayName: 'Clécio Ferreira (Dev)',
       photoURL: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&h=80&fit=crop',
-      role: 'superadmin'
+      role: 'desenvolvedor'
     };
     localStorage.setItem('es_user_session', JSON.stringify(formatted));
     return formatted;
@@ -171,11 +173,14 @@ export async function loginWithGoogle(): Promise<any> {
   if (!isLocalMode && auth) {
     const provider = new GoogleAuthProvider();
     const credential = await signInWithPopup(auth, provider);
+    const userEmail = credential.user.email?.toLowerCase() || '';
+    const targetRole = userEmail === 'clecioferreiracorretor@gmail.com' ? 'desenvolvedor' : 'superadmin';
     const formatted = {
       uid: credential.user.uid,
       email: credential.user.email,
-      displayName: credential.user.displayName || 'Google User',
-      photoURL: credential.user.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&h=80&fit=crop'
+      displayName: credential.user.displayName || (userEmail === 'clecioferreiracorretor@gmail.com' ? 'Clécio Ferreira (Dev)' : 'Google User'),
+      photoURL: credential.user.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&h=80&fit=crop',
+      role: targetRole
     };
     localStorage.setItem('es_user_session', JSON.stringify(formatted));
     return formatted;

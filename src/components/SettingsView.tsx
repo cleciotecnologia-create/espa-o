@@ -33,6 +33,7 @@ import {
 import { getEspacos, getClientes, getReservas, getPagamentos, getContratos, getLogs, getSystemUsers, saveSystemUser, deleteSystemUser } from '../services/db';
 import { SystemUser } from '../types';
 import { compressImage } from '../utils/image';
+import { getCurrentUser } from '../services/firebase';
 
 export default function SettingsView() {
   const [backupMessage, setBackupMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
@@ -76,12 +77,14 @@ export default function SettingsView() {
   const [userEmail, setUserEmail] = useState('');
   const [userSenha, setUserSenha] = useState('');
   const [userRole, setUserRole] = useState<'superadmin' | 'administrador' | 'operador' | 'desenvolvedor'>('operador');
+  const [userNivelAcesso, setUserNivelAcesso] = useState<'Admin' | 'Usuário'>('Usuário');
   const [userError, setUserError] = useState<string | null>(null);
   const [userSuccess, setUserSuccess] = useState<string | null>(null);
 
   const [showGeneralSuccess, setShowGeneralSuccess] = useState(false);
   const [showPixSuccess, setShowPixSuccess] = useState(false);
   const [localToast, setLocalToast] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [currentUserSession, setCurrentUserSession] = useState<any>(null);
 
   const showToast = (text: string, type: 'success' | 'error' = 'success') => {
     setLocalToast({ text, type });
@@ -93,6 +96,7 @@ export default function SettingsView() {
   const syncSettingsData = () => {
     loadDatabaseStats();
     loadSystemUsersList();
+    getCurrentUser().then(session => setCurrentUserSession(session));
   };
 
   useEffect(() => {
@@ -117,6 +121,14 @@ export default function SettingsView() {
     setUserError(null);
     setUserSuccess(null);
 
+    const userRoleActive = currentUserSession?.role;
+    const isMasterDev = currentUserSession?.email?.toLowerCase() === 'clecioferreiracorretor@gmail.com' || userRoleActive === 'desenvolvedor';
+    const canManage = userRoleActive === 'superadmin' || userRoleActive === 'administrador' || isMasterDev;
+    if (!canManage) {
+      setUserError("Ação bloqueada! Apenas operadores com função Superadmin ou Administrador têm permissão para cadastrar novos usuários.");
+      return;
+    }
+
     if (!userNome.trim() || !userEmail.trim() || !userSenha.trim()) {
       setUserError("Todos os campos do operador são de preenchimento obrigatório.");
       return;
@@ -127,7 +139,8 @@ export default function SettingsView() {
         nome: userNome,
         email: userEmail,
         senhaSecreta: userSenha,
-        role: userRole
+        role: userRole,
+        nivelAcesso: userNivelAcesso
       });
 
       setUserSuccess(`Operador ${userNome} cadastrado com sucesso!`);
@@ -136,6 +149,7 @@ export default function SettingsView() {
       setUserEmail('');
       setUserSenha('');
       setUserRole('operador');
+      setUserNivelAcesso('Usuário');
       loadSystemUsersList();
     } catch (err: any) {
       setUserError("Falha ao persistir usuário: " + err.message);
@@ -143,6 +157,25 @@ export default function SettingsView() {
   };
 
   const handleDeleteUser = async (id: string, name: string) => {
+    const targetUser = systemUsers.find(u => u.id === id);
+    if (id === 'usr_dev_master' || (targetUser && targetUser.email.toLowerCase() === 'clecioferreiracorretor@gmail.com')) {
+      setUserError("Ação bloqueada! O usuário desenvolvedor do sistema (clecioferreiracorretor@gmail.com) é protegido e não pode ser apagado.");
+      return;
+    }
+
+    const userRoleActive = currentUserSession?.role;
+    const isMasterDev = currentUserSession?.email?.toLowerCase() === 'clecioferreiracorretor@gmail.com' || userRoleActive === 'desenvolvedor';
+    const canManage = userRoleActive === 'superadmin' || userRoleActive === 'administrador' || isMasterDev;
+    if (!canManage) {
+      setUserError("Ação bloqueada! Apenas operadores com função Superadmin ou Administrador têm permissão para remover usuários.");
+      return;
+    }
+
+    if (currentUserSession && (currentUserSession.uid === id || (targetUser && currentUserSession.email === targetUser.email))) {
+      setUserError("Ação bloqueada! Você não pode excluir a si mesmo enquanto estiver conectado em sua sessão.");
+      return;
+    }
+
     if (confirm(`Deseja realmente revogar e apagar o acesso do operador ${name}?`)) {
       try {
         await deleteSystemUser(id);
@@ -1021,16 +1054,49 @@ export default function SettingsView() {
                 </div>
 
                 <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nível de Acesso *</label>
+                  <select
+                    value={userNivelAcesso}
+                    onChange={(e: any) => {
+                      const level = e.target.value as 'Admin' | 'Usuário';
+                      setUserNivelAcesso(level);
+                      if (level === 'Admin') {
+                        setUserRole('administrador');
+                      } else {
+                        setUserRole('operador');
+                      }
+                    }}
+                    className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-850 text-xs font-bold rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
+                  >
+                    <option value="Admin">🔑 Admin (Acesso Administrativo)</option>
+                    <option value="Usuário">👤 Usuário (Acesso Limitado)</option>
+                  </select>
+                </div>
+
+                <div>
                   <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Nível de Permissão *</label>
                   <select
                     value={userRole}
-                    onChange={(e: any) => setUserRole(e.target.value)}
+                    onChange={(e: any) => {
+                      const r = e.target.value;
+                      setUserRole(r);
+                      if (r === 'operador') {
+                        setUserNivelAcesso('Usuário');
+                      } else {
+                        setUserNivelAcesso('Admin');
+                      }
+                    }}
                     className="w-full px-3 py-2.5 border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-850 text-xs font-bold rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500/20"
                   >
-                    <option value="superadmin">Superadmin do Sistema (Desenvolvedor)</option>
-                    <option value="desenvolvedor">Desenvolvedor Administrativo</option>
-                    <option value="administrador">Administrador Regional</option>
-                    <option value="operador">Operador Comercial</option>
+                    {userNivelAcesso === 'Admin' ? (
+                      <>
+                        <option value="administrador">Administrador Regional</option>
+                        <option value="superadmin">Superadmin do Sistema (Desenvolvedor)</option>
+                        <option value="desenvolvedor">Desenvolvedor Administrativo</option>
+                      </>
+                    ) : (
+                      <option value="operador">Operador Comercial</option>
+                    )}
                   </select>
                 </div>
               </div>

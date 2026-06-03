@@ -481,6 +481,8 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
         return 'bg-cyan-100 text-cyan-800 dark:bg-cyan-950/40 dark:text-cyan-400 border-cyan-200';
       case 'Cancelado':
         return 'bg-rose-100 text-rose-800 dark:bg-rose-950/40 dark:text-rose-450 border-rose-200 opacity-70';
+      case 'Bloqueado':
+        return 'bg-red-100 text-red-800 dark:bg-rose-955/40 dark:text-rose-400 border-red-200 uppercase font-black';
     }
   };
 
@@ -496,6 +498,8 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
         return 'Realizado: O evento ocorreu e as chaves/espaço foram desocupados de forma bem-sucedida.';
       case 'Cancelado':
         return 'Cancelado: Reserva cancelada e data correspondente liberada no calendário para novos agendamentos.';
+      case 'Bloqueado':
+        return 'Bloqueado Administrativo: Data/espaço bloqueado pelo administrador. Nenhuma reserva pública é permitida nesta data.';
       default:
         return '';
     }
@@ -1024,14 +1028,16 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in font-sans">
           <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl relative space-y-6 animate-scale-up">
             
-            {/* Close Button Header */}
-            <button
-              onClick={() => setShowPixInstantModal(false)}
-              className="absolute top-4 right-4 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-white transition"
-              title="Fechar"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            {/* Close Button Header - Only allowed once PIX is confirmed */}
+            {pixModalStatus === 'confirmed' && (
+              <button
+                onClick={() => setShowPixInstantModal(false)}
+                className="absolute top-4 right-4 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-white transition"
+                title="Fechar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
 
             {/* Header Identity */}
             <div className="text-center space-y-2">
@@ -1133,6 +1139,7 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
                      <div className="text-left font-sans text-[11px] leading-snug">
                        <p className="font-extrabold text-amber-800 dark:text-amber-450 leading-tight">Conciliando com Banco Central...</p>
                        <p className="text-slate-400 mt-1">Aguardando liquidação simulada. Chave ativa por mais <strong>{pixModalCountdown} segundos</strong>.</p>
+                       <p className="text-[10px] text-amber-700 dark:text-amber-450 mt-1.5 font-bold">⚠️ O pagamento do sinal via PIX é obrigatório para prosseguir nesta pauta.</p>
                      </div>
                    </div>
                  ) : (
@@ -1141,6 +1148,7 @@ export default function BookingsView({ onNavigateToView, focusedBookingId }: Boo
                      <div className="text-left font-sans text-[11px] leading-snug">
                        <p className="font-extrabold text-red-800 dark:text-red-450 leading-tight">Tempo Limite Excedido!</p>
                        <p className="text-slate-400 mt-1">O prazo de conciliação bancária expirou. Clique em "Re-gerar PIX" para obter novo código, ou confirme manualmente abaixo.</p>
+                       <p className="text-[10px] text-red-700 dark:text-red-450 mt-1.5 font-bold">⚠️ O pagamento do sinal via PIX é obrigatório para prosseguir nesta pauta.</p>
                      </div>
                    </div>
                  )}

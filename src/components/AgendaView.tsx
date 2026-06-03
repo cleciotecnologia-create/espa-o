@@ -41,7 +41,8 @@ import {
   Download,
   RefreshCw,
   BookOpen,
-  FileText
+  FileText,
+  Lock
 } from 'lucide-react';
 
 interface AgendaViewProps {
@@ -75,6 +76,8 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
 
   // Inspector Popover for existing bookings
   const [selectedBookingForInspect, setSelectedBookingForInspect] = useState<Reserva | null>(null);
+  const [rescheduleDate, setRescheduleDate] = useState('');
+  const [showRescheduleForm, setShowRescheduleForm] = useState(false);
 
   // Booking form values
   const [formClientId, setFormClientId] = useState('');
@@ -457,62 +460,152 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
     }
   };
 
+  const handleRescheduleBooking = async (booking: Reserva, newDate: string) => {
+    if (!newDate) {
+      alert("Por favor, selecione uma nova data.");
+      return;
+    }
+
+    const currentSpace = spaces.find(s => s.id === booking.espacoId);
+    const hasConflitNow = bookings.some(b => 
+      b.dataEvento === newDate && 
+      b.espacoId === booking.espacoId && 
+      b.id !== booking.id && 
+      b.status !== 'Cancelado'
+    );
+
+    if (hasConflitNow) {
+      if (!confirm(`⚠️ Atenção: O espaço "${currentSpace?.nome || 'Selecionado'}" já está ocupado no dia ${newDate.split('-').reverse().join('/')}.\n\nDeseja forçar a remarcação para o mesmo dia apesar do conflito?`)) {
+        return;
+      }
+    }
+
+    try {
+      const oldDateFmt = booking.dataEvento.split('-').reverse().join('/');
+      const newDateFmt = newDate.split('-').reverse().join('/');
+
+      const updatedReserva: Reserva = {
+        ...booking,
+        dataEvento: newDate,
+        observacoes: `${booking.observacoes || ''}\n[REAGENDAMENTO] Data transferida administrativamente de ${oldDateFmt} para ${newDateFmt} em ${new Date().toLocaleString('pt-BR')}.`
+      };
+
+      await saveReserva(updatedReserva);
+
+      await addActivityLog(
+        "Remarcação de Pauta",
+        `Reserva #${booking.id} (${booking.tipoEvento}) transferida de ${oldDateFmt} para ${newDateFmt}.`
+      );
+
+      alert(`A pauta foi transferida com absoluto sucesso para o dia ${newDateFmt}!`);
+      setShowRescheduleForm(false);
+      setSelectedBookingForInspect(null);
+      loadAllData();
+    } catch (err: any) {
+      console.error(err);
+      alert("Erro ao salvar reagendamento: " + err.message);
+    }
+  };
+
   const handleSaveBookingForm = async (e: React.FormEvent) => {
     e.preventDefault();
 
     let targetClientId = formClientId;
+    const isBlocking = formStatus === 'Bloqueado';
 
-    if (registerNewClientOnFly && !editingBooking) {
-      if (!newClientNome.trim() || !newClientCPF.trim() || !newClientTelefone.trim() || !newClientEmail.trim()) {
-        alert("Preencha todos os dados obrigatórios do novo cliente!");
-        return;
-      }
-      try {
-        const cleanCPF = newClientCPF.replace(/\D/g, "");
-        if (cleanCPF.length !== 11 && cleanCPF.length !== 14) {
-          alert("O documento CPF/CNPJ informado é inválido. Por favor, verifique.");
+    if (isBlocking) {
+      targetClientId = 'sistema_bloqueado';
+    } else {
+      if (registerNewClientOnFly && !editingBooking) {
+        if (!newClientNome.trim() || !newClientCPF.trim() || !newClientTelefone.trim() || !newClientEmail.trim()) {
+          alert("Preencha todos os dados obrigatórios do novo cliente!");
           return;
         }
-        const generatedClientId = await saveCliente({
-          nome: newClientNome,
-          cpf: newClientCPF,
-          telefone: newClientTelefone,
-          email: newClientEmail,
-          whatsapp: newClientTelefone,
-          endereco: '',
-          observacoes: 'Cadastrado automaticamente via Ficha de Reserva na agenda'
-        });
-        targetClientId = generatedClientId;
-      } catch (err: any) {
-        alert("Erro ao cadastrar novo cliente de forma expressa: " + err.message);
+        try {
+          const cleanCPF = newClientCPF.replace(/\D/g, "");
+          if (cleanCPF.length !== 11 && cleanCPF.length !== 14) {
+            alert("O documento CPF/CNPJ informado é inválido. Por favor, verifique.");
+            return;
+          }
+          const generatedClientId = await saveCliente({
+            nome: newClientNome,
+            cpf: newClientCPF,
+            telefone: newClientTelefone,
+            email: newClientEmail,
+            whatsapp: newClientTelefone,
+            endereco: '',
+            observacoes: 'Cadastrado automaticamente via Ficha de Reserva na agenda'
+          });
+          targetClientId = generatedClientId;
+        } catch (err: any) {
+          alert("Erro ao cadastrar novo cliente de forma expressa: " + err.message);
+          return;
+        }
+      }
+
+      if (!targetClientId) {
+        alert("Por favor, selecione ou cadastre um cliente.");
         return;
       }
     }
 
-    if (!targetClientId || !formSpaceId || !formTipoEvento || !selectedDayISO) {
+    if (!formSpaceId || !formTipoEvento || !selectedDayISO) {
       alert("Preencha as informações obrigatórias.");
       return;
     }
 
-    // Validação de capacidade máxima do espaço selecionado
-    const selectedSpace = spaces.find(s => s.id === formSpaceId);
-    if (selectedSpace) {
-      const maxCap = selectedSpace.capacidade || 80;
-      if (Number(formQtdConvidados) > maxCap) {
-        alert(`A quantidade de convidados (${formQtdConvidados}) excede a capacidade máxima permitida para o espaço "${selectedSpace.nome}" (máximo ${maxCap} pessoas).`);
+    // Block all spaces at once scenario
+    if (isBlocking && formSpaceId === 'todos') {
+      try {
+        for (const s of spaces) {
+          await saveReserva({
+            clienteId: 'sistema_bloqueado',
+            espacoId: s.id,
+            tipoEvento: formTipoEvento || 'Bloqueio Administrativo',
+            dataEvento: selectedDayISO,
+            horario: formHorario,
+            qtdConvidados: 0,
+            valorTotal: 0,
+            valorSinal: 0,
+            status: 'Bloqueado',
+            observacoes: formObservacoes || 'Bloqueio geral do salão/espaço'
+          });
+        }
+        await addActivityLog(
+          "Bloqueio Geral de Pauta",
+          `Todas as pautas do dia ${selectedDayISO.split('-').reverse().join('/')} foram bloqueadas administrativamente.`
+        );
+        setShowBookingModal(false);
+        loadAllData();
+        alert("Todas as pautas foram bloqueadas administrativo-preventivo com absoluto sucesso!");
         return;
+      } catch (err: any) {
+        alert("Erro no bloqueio geral: " + err.message);
+        return;
+      }
+    }
+
+    // Validação de capacidade máxima do espaço selecionado
+    if (!isBlocking) {
+      const selectedSpace = spaces.find(s => s.id === formSpaceId);
+      if (selectedSpace) {
+        const maxCap = selectedSpace.capacidade || 80;
+        if (Number(formQtdConvidados) > maxCap) {
+          alert(`A quantidade de convidados (${formQtdConvidados}) excede a capacidade máxima permitida para o espaço "${selectedSpace.nome}" (máximo ${maxCap} pessoas).`);
+          return;
+        }
       }
     }
 
     const payload: Omit<Reserva, 'id' | 'createdAt'> & { id?: string } = {
       clienteId: targetClientId,
       espacoId: formSpaceId,
-      tipoEvento: formTipoEvento,
+      tipoEvento: isBlocking ? (formTipoEvento || 'Bloqueio Administrativo') : formTipoEvento,
       dataEvento: selectedDayISO,
       horario: formHorario,
-      qtdConvidados: Number(formQtdConvidados),
-      valorTotal: Number(formValorTotal),
-      valorSinal: Number(formValorSinal),
+      qtdConvidados: isBlocking ? 0 : Number(formQtdConvidados),
+      valorTotal: isBlocking ? 0 : Number(formValorTotal),
+      valorSinal: isBlocking ? 0 : Number(formValorSinal),
       status: formStatus,
       observacoes: formObservacoes
     };
@@ -524,8 +617,8 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
     try {
       const generatedId = await saveReserva(payload);
 
-      // Create initial payment bills automatically if creating a new booking
-      if (!editingBooking) {
+      // Create initial payment bills automatically if creating a new booking and not blocking
+      if (!editingBooking && !isBlocking) {
         // Sinal payment
         await savePagamento({
           reservaId: generatedId,
@@ -542,10 +635,17 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
         });
       }
 
+      await addActivityLog(
+        isBlocking ? "Bloqueio de Data" : "Salvar Reserva",
+        isBlocking
+          ? `Data ${selectedDayISO.split('-').reverse().join('/')} bloqueada para o espaço.`
+          : `Locação salva/reagendada para o dia ${selectedDayISO.split('-').reverse().join('/')}.`
+      );
+
       setShowBookingModal(false);
       loadAllData();
 
-      if (!editingBooking) {
+      if (!editingBooking && !isBlocking) {
         // Trigger the instant PIX payment modal!
         const fullReserva: Reserva = {
           id: generatedId,
@@ -580,6 +680,8 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
         return 'bg-cyan-500 text-white';
       case 'Cancelado':
         return 'bg-slate-400 text-white line-through opacity-60';
+      case 'Bloqueado':
+        return 'bg-red-650 dark:bg-rose-900/90 text-white font-extrabold border border-red-700/45';
     }
   };
 
@@ -595,6 +697,8 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
         return 'Realizado: O evento ocorreu e as chaves/espaço foram desocupados de forma bem-sucedida.';
       case 'Cancelado':
         return 'Cancelado: Reserva cancelada e data correspondente liberada no calendário para novos agendamentos.';
+      case 'Bloqueado':
+        return 'Bloqueado Administrativo: Data/espaço bloqueado pelo administrador. Nenhuma reserva pública é permitida nesta data.';
       default:
         return '';
     }
@@ -691,10 +795,13 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
                 const dayIso = day.toISOString().split('T')[0];
                 const dayBookings = getDayBookings(dayIso);
                 const hasBooking = dayBookings.length > 0;
+                const isBlocked = dayBookings.some(b => b.status === 'Bloqueado');
                 const isPast = isPastDate(day);
                 
                 let cellClass = "";
-                if (hasBooking) {
+                if (isBlocked) {
+                  cellClass = 'h-24 p-2.5 rounded-xl border flex flex-col justify-between cursor-pointer border-red-300 dark:border-rose-950 bg-rose-50/30 dark:bg-rose-950/20 hover:bg-rose-100/40 dark:hover:bg-rose-950/30 transition-all duration-200 transform hover:-translate-y-0.5 shadow-sm hover:shadow animate-fade-in';
+                } else if (hasBooking) {
                   cellClass = isPast
                     ? 'h-24 p-2.5 rounded-xl border flex flex-col justify-between cursor-pointer border-indigo-150/40 dark:border-indigo-950/60 bg-indigo-50/15 dark:bg-indigo-950/5 opacity-80 hover:opacity-100 shadow-sm transition-all duration-200 animate-fade-in'
                     : 'h-24 p-2.5 rounded-xl border flex flex-col justify-between cursor-pointer transition-all duration-200 transform hover:-translate-y-0.5 border-indigo-200 dark:border-indigo-900/50 bg-indigo-50/50 dark:bg-indigo-950/15 hover:bg-indigo-100/60 dark:hover:bg-indigo-950/25 shadow-sm hover:shadow animate-fade-in';
@@ -716,9 +823,11 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
                       <span className="text-xs font-black text-gray-950 dark:text-zinc-200">
                         {day.getDate()}
                       </span>
-                      {hasBooking && (
+                      {isBlocked ? (
+                        <Lock className="w-3 h-3 text-red-500 fill-red-500/10" />
+                      ) : hasBooking ? (
                         <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
-                      )}
+                      ) : null}
                     </div>
 
                     {/* Booking indicator line */}
@@ -807,6 +916,10 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
                 <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 block"></span>
                 <span>Orçamento (Pré-reserva)</span>
               </div>
+              <div className="flex items-center gap-2 cursor-help" title={getStatusTooltip('Bloqueado')}>
+                <span className="w-2.5 h-2.5 rounded-full bg-red-650 dark:bg-rose-900 block border border-red-700/30"></span>
+                <span className="font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1">🚫 Bloqueio Administrativo</span>
+              </div>
             </div>
           </div>
 
@@ -844,7 +957,9 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
                 <div>
                   <p className="text-[10px] text-gray-400 uppercase leading-none font-sans">Cliente Contratante</p>
                   <p className="text-gray-900 dark:text-white font-semibold mt-0.5">
-                    {clients.find(c => c.id === selectedBookingForInspect.clienteId)?.nome || "Não encontrado"}
+                    {selectedBookingForInspect.status === 'Bloqueado' 
+                      ? "🔐 Bloqueio Geral Administrativo / Manutenção" 
+                      : (clients.find(c => c.id === selectedBookingForInspect.clienteId)?.nome || "Não encontrado")}
                   </p>
                 </div>
               </div>
@@ -870,6 +985,69 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
                   <p className="text-[10px] text-gray-400 font-sans">HORÁRIO SLOTS</p>
                   <p className="text-gray-905 dark:text-white font-bold mt-0.5">{selectedBookingForInspect.horario}</p>
                 </div>
+              </div>
+
+              {/* Reschedule Inline CTA Block */}
+              <div className="bg-slate-50 dark:bg-slate-950/20 p-3 rounded-xl border border-dashed border-gray-200 dark:border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase">Transferência / Remarcação</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!showRescheduleForm) {
+                        setRescheduleDate(selectedBookingForInspect.dataEvento);
+                      }
+                      setShowRescheduleForm(!showRescheduleForm);
+                    }}
+                    className="text-[10px] bg-indigo-55/70 hover:bg-indigo-100 text-indigo-650 dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-indigo-400 px-2.5 py-1 rounded-lg font-bold flex items-center gap-1 transition-all cursor-pointer border border-indigo-150/40"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${showRescheduleForm ? 'animate-spin' : ''}`} />
+                    {showRescheduleForm ? 'Ocultar Painel' : '🗓️ Remarcar Data'}
+                  </button>
+                </div>
+
+                {showRescheduleForm && (
+                  <div className="pt-2 border-t border-slate-100 dark:border-slate-800 space-y-3 animate-fade-in text-xs text-left">
+                    <div>
+                      <label className="block text-[10px] font-bold text-gray-400 dark:text-zinc-500 uppercase mb-1">Selecionar Nova Data *</label>
+                      <input 
+                        type="date"
+                        required
+                        value={rescheduleDate}
+                        onChange={(e) => setRescheduleDate(e.target.value)}
+                        className="w-full px-2.5 py-1.5 border border-slate-250 dark:border-slate-700 rounded-lg outline-none bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-bold"
+                      />
+                    </div>
+
+                    {rescheduleDate && (
+                      <div className="p-2 py-1.5 rounded bg-slate-150/40 dark:bg-slate-950/50 text-[11px] leading-tight flex items-center justify-between font-mono">
+                        <span className="text-gray-400">Pauta para {rescheduleDate.split('-').reverse().join('/')}:</span>
+                        {bookings.some(b => b.dataEvento === rescheduleDate && b.espacoId === selectedBookingForInspect.espacoId && b.id !== selectedBookingForInspect.id && b.status !== 'Cancelado') ? (
+                          <span className="text-amber-600 dark:text-amber-400 font-extrabold flex items-center gap-1">⚠️ Ocupado</span>
+                        ) : (
+                          <span className="text-emerald-600 dark:text-emerald-400 font-extrabold flex items-center gap-1">🟢 Disponível</span>
+                        )}
+                      </div>
+                    )}
+
+                    <div className="flex gap-2 pt-1 font-sans justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setShowRescheduleForm(false)}
+                        className="py-1 px-3 bg-gray-105 hover:bg-gray-200 text-gray-700 text-[10px] font-bold rounded-md"
+                      >
+                        Cancelar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRescheduleBooking(selectedBookingForInspect, rescheduleDate)}
+                        className="py-1 px-3 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded-lg flex items-center gap-1 cursor-pointer transition shadow-sm"
+                      >
+                        Confirmar Reagendamento
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="grid grid-cols-3 gap-2 text-center">
@@ -988,83 +1166,85 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
             <form onSubmit={handleSaveBookingForm} className="space-y-4 mt-4">
               
               {/* Select or Register Client (Requisito: se cadastrar reserva, já cadastra em clientes corporativos) */}
-              <div className="space-y-3 p-3.5 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-gray-150 dark:border-slate-800 animate-fade-in text-xs">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-black text-gray-700 dark:text-zinc-350 uppercase leading-none">Cliente Contratante *</label>
-                  {!editingBooking && (
-                    <label className="flex items-center gap-1.5 text-[10px] font-extrabold text-indigo-650 dark:text-indigo-400 select-none cursor-pointer leading-none">
-                      <input
-                        type="checkbox"
-                        checked={registerNewClientOnFly}
-                        onChange={(e) => setRegisterNewClientOnFly(e.target.checked)}
-                        className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
-                      />
-                      <span>Cadastrar Novo Cliente</span>
-                    </label>
+              {formStatus !== 'Bloqueado' && (
+                <div className="space-y-3 p-3.5 bg-slate-50 dark:bg-slate-950/40 rounded-xl border border-gray-150 dark:border-slate-800 animate-fade-in text-xs">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-black text-gray-700 dark:text-zinc-350 uppercase leading-none">Cliente Contratante *</label>
+                    {!editingBooking && (
+                      <label className="flex items-center gap-1.5 text-[10px] font-extrabold text-indigo-650 dark:text-indigo-400 select-none cursor-pointer leading-none">
+                        <input
+                          type="checkbox"
+                          checked={registerNewClientOnFly}
+                          onChange={(e) => setRegisterNewClientOnFly(e.target.checked)}
+                          className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                        />
+                        <span>Cadastrar Novo Cliente</span>
+                      </label>
+                    )}
+                  </div>
+
+                  {!registerNewClientOnFly ? (
+                    <select
+                      required={formStatus !== 'Bloqueado'}
+                      value={formClientId}
+                      onChange={(e) => setFormClientId(e.target.value)}
+                      className="w-full px-3.5 py-2.5 text-xs rounded-lg border border-gray-300 dark:border-slate-707 bg-white dark:bg-slate-800 text-gray-900 dark:text-zinc-250 focus:outline-none"
+                    >
+                      <option value="">-- Selecione o cliente existente --</option>
+                      {clients.map(c => (
+                        <option key={c.id} value={c.id}>{c.nome} (CPF/CNPJ: {c.cpf})</option>
+                      ))}
+                    </select>
+                  ) : (
+                    <div className="space-y-3 pt-2.5 border-t border-gray-200 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-3 pb-1">
+                      <div className="sm:col-span-2">
+                        <label className="block text-[10px] font-bold text-gray-400 dark:text-zinc-400 uppercase tracking-wider mb-1">Nome Completo *</label>
+                        <input
+                          type="text"
+                          required={registerNewClientOnFly && formStatus !== 'Bloqueado'}
+                          placeholder="Ex: Clécio Ferreira Corretor"
+                          value={newClientNome}
+                          onChange={(e) => setNewClientNome(e.target.value)}
+                          className="w-full px-3.5 py-2 text-xs rounded-lg border border-gray-350 dark:border-slate-705 bg-white dark:bg-slate-800 text-gray-955 dark:text-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-400 dark:text-zinc-400 uppercase tracking-wider mb-1">Documento (CPF ou CNPJ) *</label>
+                        <input
+                          type="text"
+                          required={registerNewClientOnFly && formStatus !== 'Bloqueado'}
+                          placeholder="Ex: 000.000.000-00"
+                          value={newClientCPF}
+                          onChange={(e) => setNewClientCPF(formatCPFOrCNPJ(e.target.value))}
+                          className="w-full px-3.5 py-2 text-xs rounded-lg border border-gray-350 dark:border-slate-705 bg-white dark:bg-slate-800 text-gray-955 dark:text-white font-mono"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-gray-400 dark:text-zinc-400 uppercase tracking-wider mb-1">WhatsApp / Celular *</label>
+                        <input
+                          type="text"
+                          required={registerNewClientOnFly && formStatus !== 'Bloqueado'}
+                          placeholder="Ex: (11) 99321-0012"
+                          value={newClientTelefone}
+                          onChange={(e) => setNewClientTelefone(formatPhone(e.target.value))}
+                          className="w-full px-3.5 py-2 text-xs rounded-lg border border-gray-350 dark:border-slate-705 bg-white dark:bg-slate-800 text-gray-955 dark:text-white font-mono"
+                        />
+                      </div>
+                      <div className="sm:col-span-2">
+                        <label className="block text-[10px] font-bold text-gray-400 dark:text-zinc-400 uppercase tracking-wider mb-1">E-mail Corporativo *</label>
+                        <input
+                          type="email"
+                          required={registerNewClientOnFly && formStatus !== 'Bloqueado'}
+                          placeholder="Ex: clecio.corretor@outlook.com"
+                          value={newClientEmail}
+                          onChange={(e) => setNewClientEmail(e.target.value)}
+                          className="w-full px-3.5 py-2 text-xs rounded-lg border border-gray-350 dark:border-slate-705 bg-white dark:bg-slate-800 text-gray-955 dark:text-white"
+                        />
+                      </div>
+                    </div>
                   )}
                 </div>
-
-                {!registerNewClientOnFly ? (
-                  <select
-                    required
-                    value={formClientId}
-                    onChange={(e) => setFormClientId(e.target.value)}
-                    className="w-full px-3.5 py-2.5 text-xs rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-900 dark:text-zinc-250 focus:outline-none"
-                  >
-                    <option value="">-- Selecione o cliente existente --</option>
-                    {clients.map(c => (
-                      <option key={c.id} value={c.id}>{c.nome} (CPF/CNPJ: {c.cpf})</option>
-                    ))}
-                  </select>
-                ) : (
-                  <div className="space-y-3 pt-2.5 border-t border-gray-200 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-3 pb-1">
-                    <div className="sm:col-span-2">
-                      <label className="block text-[10px] font-bold text-gray-400 dark:text-zinc-400 uppercase tracking-wider mb-1">Nome Completo *</label>
-                      <input
-                        type="text"
-                        required={registerNewClientOnFly}
-                        placeholder="Ex: Clécio Ferreira Corretor"
-                        value={newClientNome}
-                        onChange={(e) => setNewClientNome(e.target.value)}
-                        className="w-full px-3.5 py-2 text-xs rounded-lg border border-gray-350 dark:border-slate-705 bg-white dark:bg-slate-800 text-gray-955 dark:text-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-gray-400 dark:text-zinc-400 uppercase tracking-wider mb-1">Documento (CPF ou CNPJ) *</label>
-                      <input
-                        type="text"
-                        required={registerNewClientOnFly}
-                        placeholder="Ex: 000.000.000-00"
-                        value={newClientCPF}
-                        onChange={(e) => setNewClientCPF(formatCPFOrCNPJ(e.target.value))}
-                        className="w-full px-3.5 py-2 text-xs rounded-lg border border-gray-350 dark:border-slate-705 bg-white dark:bg-slate-800 text-gray-955 dark:text-white font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-gray-400 dark:text-zinc-400 uppercase tracking-wider mb-1">WhatsApp / Celular *</label>
-                      <input
-                        type="text"
-                        required={registerNewClientOnFly}
-                        placeholder="Ex: (11) 99321-0012"
-                        value={newClientTelefone}
-                        onChange={(e) => setNewClientTelefone(formatPhone(e.target.value))}
-                        className="w-full px-3.5 py-2 text-xs rounded-lg border border-gray-350 dark:border-slate-705 bg-white dark:bg-slate-800 text-gray-955 dark:text-white font-mono"
-                      />
-                    </div>
-                    <div className="sm:col-span-2">
-                      <label className="block text-[10px] font-bold text-gray-400 dark:text-zinc-400 uppercase tracking-wider mb-1">E-mail Corporativo *</label>
-                      <input
-                        type="email"
-                        required={registerNewClientOnFly}
-                        placeholder="Ex: clecio.corretor@outlook.com"
-                        value={newClientEmail}
-                        onChange={(e) => setNewClientEmail(e.target.value)}
-                        className="w-full px-3.5 py-2 text-xs rounded-lg border border-gray-350 dark:border-slate-705 bg-white dark:bg-slate-800 text-gray-955 dark:text-white"
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
+              )}
 
               {/* Space Selection */}
               <div>
@@ -1073,9 +1253,12 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
                   required
                   value={formSpaceId}
                   onChange={(e) => setFormSpaceId(e.target.value)}
-                  className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-gray-350 dark:border-slate-705 bg-white dark:bg-slate-803 text-gray-900 dark:text-zinc-100 focus:outline-none"
+                  className="w-full px-3.5 py-2.5 text-sm rounded-lg border border-gray-350 dark:border-slate-705 bg-white dark:bg-slate-800 text-gray-900 dark:text-zinc-100 focus:outline-none"
                 >
                   <option value="">-- Selecione o espaço --</option>
+                  {formStatus === 'Bloqueado' && (
+                    <option value="todos" className="text-red-500 font-bold">🚫 TODOS OS ESPAÇOS (Bloqueio Geral de Pauta)</option>
+                  )}
                   {spaces.map(s => (
                     <option key={s.id} value={s.id}>{s.nome} (Ativo • Valor diário: R$ {s.valorLocacao})</option>
                   ))}
@@ -1109,50 +1292,52 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
               </div>
 
               {/* Guests Count & Billing totals */}
-              <div className="grid grid-cols-3 gap-2">
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1 flex justify-between items-center">
-                    <span>Convidados *</span>
-                    <span className="text-[9px] text-amber-600 dark:text-amber-400 font-extrabold font-sans">Máx. 80</span>
-                  </label>
-                  <input
-                    type="number"
-                    required
-                    min={1}
-                    max={80}
-                    value={formQtdConvidados}
-                    onChange={(e) => {
-                      const val = Number(e.target.value);
-                      if (val > 80) {
-                        setFormQtdConvidados(80);
-                      } else {
-                        setFormQtdConvidados(val);
-                      }
-                    }}
-                    className="w-full px-2 py-2.5 text-sm rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-950 dark:text-white"
-                  />
+              {formStatus !== 'Bloqueado' && (
+                <div className="grid grid-cols-3 gap-2">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1 flex justify-between items-center">
+                      <span>Convidados *</span>
+                      <span className="text-[9px] text-amber-600 dark:text-amber-400 font-extrabold font-sans">Máx. 80</span>
+                    </label>
+                    <input
+                      type="number"
+                      required={formStatus !== 'Bloqueado'}
+                      min={1}
+                      max={80}
+                      value={formQtdConvidados}
+                      onChange={(e) => {
+                        const val = Number(e.target.value);
+                        if (val > 80) {
+                          setFormQtdConvidados(80);
+                        } else {
+                          setFormQtdConvidados(val);
+                        }
+                      }}
+                      className="w-full px-2 py-2.5 text-sm rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-955 dark:text-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Valor Total (R$) *</label>
+                    <input
+                      type="number"
+                      required={formStatus !== 'Bloqueado'}
+                      value={formValorTotal}
+                      onChange={(e) => setFormValorTotal(Number(e.target.value))}
+                      className="w-full px-2 py-2.5 text-sm rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-950 dark:text-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Sinal Exigido (R$) *</label>
+                    <input
+                      type="number"
+                      required={formStatus !== 'Bloqueado'}
+                      value={formValorSinal}
+                      onChange={(e) => setFormValorSinal(Number(e.target.value))}
+                      className="w-full px-2 py-2.5 text-sm rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-950 dark:text-white font-mono"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Valor Total (R$) *</label>
-                  <input
-                    type="number"
-                    required
-                    value={formValorTotal}
-                    onChange={(e) => setFormValorTotal(Number(e.target.value))}
-                    className="w-full px-2 py-2.5 text-sm rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-950 dark:text-white font-mono"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-gray-700 dark:text-zinc-300 uppercase mb-1">Sinal Exigido (R$) *</label>
-                  <input
-                    type="number"
-                    required
-                    value={formValorSinal}
-                    onChange={(e) => setFormValorSinal(Number(e.target.value))}
-                    className="w-full px-2 py-2.5 text-sm rounded-lg border border-gray-300 dark:border-slate-700 bg-white dark:bg-slate-800 text-gray-950 dark:text-white font-mono"
-                  />
-                </div>
-              </div>
+              )}
 
               {/* Status Select */}
               <div>
@@ -1167,6 +1352,7 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
                   <option value="Confirmado" title={getStatusTooltip('Confirmado')}>Confirmado (Reserva Ativa)</option>
                   <option value="Realizado" title={getStatusTooltip('Realizado')}>Realizado</option>
                   <option value="Cancelado" title={getStatusTooltip('Cancelado')}>Cancelado</option>
+                  <option value="Bloqueado" title={getStatusTooltip('Bloqueado')}>Bloqueado Administrativo / Bloquear Data</option>
                 </select>
                 <div className="mt-1.5 p-2 bg-slate-50 dark:bg-slate-950/60 rounded-lg text-[10px] text-zinc-550 dark:text-zinc-400 border border-slate-100 dark:border-slate-850/60 leading-normal">
                   💡 <span className="font-extrabold capitalize">{formStatus}:</span> {getStatusTooltip(formStatus)}
@@ -1212,14 +1398,16 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in font-sans">
           <div className="bg-white dark:bg-slate-900 border border-slate-100 dark:border-slate-800 rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl relative space-y-6 animate-scale-up">
             
-            {/* Close Button Header */}
-            <button
-              onClick={() => setShowPixInstantModal(false)}
-              className="absolute top-4 right-4 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-white transition"
-              title="Fechar"
-            >
-              <X className="w-5 h-5" />
-            </button>
+            {/* Close Button Header - Only allowed once PIX is confirmed */}
+            {pixModalStatus === 'confirmed' && (
+              <button
+                onClick={() => setShowPixInstantModal(false)}
+                className="absolute top-4 right-4 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full text-slate-400 hover:text-slate-600 dark:hover:text-white transition"
+                title="Fechar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            )}
 
             {/* Header Identity */}
             <div className="text-center space-y-2">
@@ -1321,6 +1509,7 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
                      <div className="text-left font-sans text-[11px] leading-snug">
                        <p className="font-extrabold text-amber-800 dark:text-amber-450 leading-tight">Conciliando com Banco Central...</p>
                        <p className="text-slate-400 mt-1">Aguardando liquidação simulada. Chave ativa por mais <strong>{pixModalCountdown} segundos</strong>.</p>
+                       <p className="text-[10px] text-amber-700 dark:text-amber-450 mt-1.5 font-bold">⚠️ O pagamento do sinal via PIX é obrigatório para prosseguir nesta pauta.</p>
                      </div>
                    </div>
                  ) : (
@@ -1329,6 +1518,7 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
                      <div className="text-left font-sans text-[11px] leading-snug">
                        <p className="font-extrabold text-red-800 dark:text-red-450 leading-tight">Tempo Limite Excedido!</p>
                        <p className="text-slate-400 mt-1">O prazo de conciliação bancária expirou. Clique em "Re-gerar PIX" para obter novo código, ou confirme manualmente abaixo.</p>
+                       <p className="text-[10px] text-red-700 dark:text-red-450 mt-1.5 font-bold">⚠️ O pagamento do sinal via PIX é obrigatório para prosseguir nesta pauta.</p>
                      </div>
                    </div>
                  )}

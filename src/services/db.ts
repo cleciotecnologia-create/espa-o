@@ -243,19 +243,12 @@ const INITIAL_LOGS: ActivityLog[] = [
 
 const INITIAL_SYSTEM_USERS: SystemUser[] = [
   {
-    id: "usr_1",
-    nome: "Clécio Santos (Superadmin)",
-    email: "admin@eventspace.com.br",
+    id: "usr_dev_master",
+    nome: "Clécio Ferreira (Dev)",
+    email: "clecioferreiracorretor@gmail.com",
     senhaSecreta: "123456",
-    role: "superadmin",
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: "usr_2",
-    nome: "Desenvolvedor Core",
-    email: "dev@eventspace.com.br",
-    senhaSecreta: "admin",
     role: "desenvolvedor",
+    nivelAcesso: "Admin",
     createdAt: new Date().toISOString()
   }
 ];
@@ -326,7 +319,12 @@ function initLocalDB() {
   if (!localStorage.getItem('es_logs')) {
     localStorage.setItem('es_logs', JSON.stringify(INITIAL_LOGS));
   }
-  if (!localStorage.getItem('es_system_users')) {
+  const currentUsers = localStorage.getItem('es_system_users');
+  const needsUsersMigration = !currentUsers || 
+                             currentUsers.includes('admin@eventspace.com.br') || 
+                             currentUsers.includes('cleciopav@hotmail.com') ||
+                             !currentUsers.includes('nivelAcesso');
+  if (needsUsersMigration) {
     localStorage.setItem('es_system_users', JSON.stringify(INITIAL_SYSTEM_USERS));
   }
 }
@@ -338,6 +336,90 @@ if (typeof window !== 'undefined') {
   // Initialize real-time sync with Firestore database if active
   if (!isLocalMode && db) {
     try {
+      // Assistive remote database seeder in Firestore
+      const seedFirestoreIfEmpty = async () => {
+        try {
+          const usersSnap = await getDocs(collection(db, 'system_users'));
+          if (usersSnap.empty) {
+            console.log("Seeding system_users in Firestore...");
+            for (const u of INITIAL_SYSTEM_USERS) {
+              await setDoc(doc(db, 'system_users', u.id), u);
+            }
+          } else {
+            // Verify if the user clecioferreiracorretor@gmail.com is explicitly in Firestore system_users
+            const checkQuery = query(collection(db, 'system_users'), where('email', '==', 'clecioferreiracorretor@gmail.com'));
+            const checkSnap = await getDocs(checkQuery);
+            if (checkSnap.empty) {
+              console.log("Force inserting master operator: clecioferreiracorretor@gmail.com");
+              const clecioUser = INITIAL_SYSTEM_USERS.find(e => e.email === 'clecioferreiracorretor@gmail.com');
+              if (clecioUser) {
+                await setDoc(doc(db, 'system_users', clecioUser.id), clecioUser);
+              }
+            }
+            
+            // Clean up other users in the Firestore "system_users" collection to make sure we "apagar todos os usuarios" other than clecioferreiracorretor@gmail.com
+            for (const docSnap of usersSnap.docs) {
+              const data = docSnap.data();
+              if (data.email && data.email.toLowerCase() !== 'clecioferreiracorretor@gmail.com') {
+                console.log(`De-seeding non-dev user from Firestore: ${data.email}`);
+                await deleteDoc(doc(db, 'system_users', docSnap.id));
+              }
+            }
+          }
+
+          const spacesSnap = await getDocs(collection(db, 'espacos'));
+          if (spacesSnap.empty) {
+            console.log("Seeding espacos in Firestore...");
+            for (const s of INITIAL_SPACES) {
+              await setDoc(doc(db, 'espacos', s.id), s);
+            }
+          }
+
+          const clientsSnap = await getDocs(collection(db, 'clientes'));
+          if (clientsSnap.empty) {
+            console.log("Seeding clientes in Firestore...");
+            for (const c of INITIAL_CLIENTS) {
+              await setDoc(doc(db, 'clientes', c.id), c);
+            }
+          }
+
+          const bookingsSnap = await getDocs(collection(db, 'reservas'));
+          if (bookingsSnap.empty) {
+            console.log("Seeding reservas in Firestore...");
+            for (const b of INITIAL_BOOKINGS) {
+              await setDoc(doc(db, 'reservas', b.id), b);
+            }
+          }
+
+          const paymentsSnap = await getDocs(collection(db, 'pagamentos'));
+          if (paymentsSnap.empty) {
+            console.log("Seeding pagamentos in Firestore...");
+            for (const p of INITIAL_PAYMENTS) {
+              await setDoc(doc(db, 'pagamentos', p.id), p);
+            }
+          }
+
+          const contractsSnap = await getDocs(collection(db, 'contratos'));
+          if (contractsSnap.empty) {
+            console.log("Seeding contratos in Firestore...");
+            for (const co of INITIAL_CONTRACTS) {
+              await setDoc(doc(db, 'contratos', co.id), co);
+            }
+          }
+
+          const logsSnap = await getDocs(collection(db, 'logs'));
+          if (logsSnap.empty) {
+            console.log("Seeding logs in Firestore...");
+            for (const l of INITIAL_LOGS) {
+              await setDoc(doc(db, 'logs', l.id), l);
+            }
+          }
+        } catch (e) {
+          console.warn("Auto-seeding Firestore was offline or bypassed by permissions:", e);
+        }
+      };
+      seedFirestoreIfEmpty();
+
       // 1. Listen to 'espacos'
       onSnapshot(collection(db, 'espacos'), (snapshot) => {
         const items = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
@@ -802,6 +884,12 @@ export async function saveSystemUser(user: Omit<SystemUser, 'id' | 'createdAt'> 
 }
 
 export async function deleteSystemUser(id: string): Promise<void> {
+  const items = getLocalData<SystemUser>('es_system_users');
+  const targetUser = items.find(u => u.id === id);
+  if (id === 'usr_dev_master' || (targetUser && targetUser.email.toLowerCase() === 'clecioferreiracorretor@gmail.com')) {
+    throw new Error("O usuário dev do sistema (clecioferreiracorretor@gmail.com) é protegido e não pode ser apagado.");
+  }
+
   const path = 'system_users';
   if (!isLocalMode && db) {
     try {
@@ -813,7 +901,6 @@ export async function deleteSystemUser(id: string): Promise<void> {
     }
   }
 
-  const items = getLocalData<SystemUser>('es_system_users');
   const updated = items.filter(i => i.id !== id);
   setLocalData('es_system_users', updated);
   await addActivityLog("Controle de Operadores", `Removido operador ID ${id} localmente.`);

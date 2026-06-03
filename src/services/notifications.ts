@@ -96,7 +96,9 @@ const DEFAULT_LESSOR_CONFIGS: LessorConfigs = {
   email: "contato@eventspace.com.br",
   endereco: "Av. Paulista, 1000 - Bela Vista - São Paulo - SP",
   representanteNome: "Clécio Santos",
-  representanteCpf: "123.456.789-00"
+  representanteCpf: "123.456.789-00",
+  tipoPessoa: 'PJ',
+  rg: ""
 };
 
 initLocalNotifs();

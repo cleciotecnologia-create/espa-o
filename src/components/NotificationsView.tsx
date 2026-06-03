@@ -122,7 +122,17 @@ export default function NotificationsView() {
 
   const handleSaveLessor = (e: React.FormEvent) => {
     e.preventDefault();
-    saveLessorConfigs(lessorConfigs);
+    const updated = { ...lessorConfigs };
+    if (updated.tipoPessoa === 'PF') {
+      if (!updated.representanteNome) {
+        updated.representanteNome = updated.razaoSocial;
+      }
+      if (!updated.representanteCpf) {
+        updated.representanteCpf = updated.cnpjCpf;
+      }
+    }
+    saveLessorConfigs(updated);
+    setLessorConfigs(updated);
     setSaveLessorSuccess(true);
     setTimeout(() => setSaveLessorSuccess(false), 3000);
   };
@@ -1012,13 +1022,46 @@ export default function NotificationsView() {
               </span>
             </div>
 
+            {/* Person Type Selector */}
+            <div className="bg-slate-50 dark:bg-slate-950/40 p-4 rounded-xl border border-slate-100 dark:border-slate-800 space-y-2">
+              <label className="block text-[10px] font-bold text-slate-500 dark:text-zinc-400 uppercase tracking-wider font-sans">Tipo de Contribuinte / Pessoa (Locador)</label>
+              <div className="flex gap-4">
+                <button
+                  type="button"
+                  id="locador-tipo-pj"
+                  onClick={() => setLessorConfigs({ ...lessorConfigs, tipoPessoa: 'PJ' })}
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg border transition cursor-pointer ${
+                    (lessorConfigs.tipoPessoa || 'PJ') === 'PJ'
+                      ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                      : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 bg-transparent hover:bg-slate-100 dark:hover:bg-slate-900 bg-white dark:bg-slate-900'
+                  }`}
+                >
+                  🏢 Pessoa Jurídica (Empresa / CNPJ)
+                </button>
+                <button
+                  type="button"
+                  id="locador-tipo-pf"
+                  onClick={() => setLessorConfigs({ ...lessorConfigs, tipoPessoa: 'PF' })}
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg border transition cursor-pointer ${
+                    lessorConfigs.tipoPessoa === 'PF'
+                      ? 'bg-indigo-600 border-indigo-600 text-white shadow-sm'
+                      : 'border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 bg-transparent hover:bg-slate-100 dark:hover:bg-slate-900 bg-white dark:bg-slate-900'
+                  }`}
+                >
+                  👤 Pessoa Física (Indivíduo / Proprietário CPF)
+                </button>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-semibold">
               <div>
-                <label className="block text-slate-500 uppercase tracking-wider mb-1.5 font-sans">Razão Social (PJ)</label>
+                <label className="block text-slate-500 uppercase tracking-wider mb-1.5 font-sans">
+                  {lessorConfigs.tipoPessoa === 'PF' ? 'Nome Completo do Locador (PF) *' : 'Razão Social (PJ) *'}
+                </label>
                 <input
                   type="text"
                   required
-                  placeholder="EX: EVENTSPACE ERP GESTÃO DE ESPAÇOS LTDA"
+                  placeholder={lessorConfigs.tipoPessoa === 'PF' ? "EX: Clécio Ferreira dos Santos" : "EX: EVENTSPACE ERP GESTÃO DE ESPAÇOS LTDA"}
                   value={lessorConfigs.razaoSocial}
                   onChange={(e) => setLessorConfigs({ ...lessorConfigs, razaoSocial: e.target.value })}
                   className="w-full px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-955 dark:text-white outline-none focus:border-indigo-500 font-medium"
@@ -1026,25 +1069,29 @@ export default function NotificationsView() {
               </div>
 
               <div>
-                <label className="block text-slate-500 uppercase tracking-wider mb-1.5 font-sans">Nome Fantasia / Marca</label>
+                <label className="block text-slate-500 uppercase tracking-wider mb-1.5 font-sans">
+                  {lessorConfigs.tipoPessoa === 'PF' ? 'Nome do Salão ou Espaço *' : 'Nome Fantasia / Marca *'}
+                </label>
                 <input
                   type="text"
                   required
-                  placeholder="EX: EventSpace Locações"
+                  placeholder="EX: Salão Noble & Buffet Palace"
                   value={lessorConfigs.nomeFantasia}
                   onChange={(e) => setLessorConfigs({ ...lessorConfigs, nomeFantasia: e.target.value })}
-                  className="w-full px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-955 text-slate-955 dark:text-white outline-none focus:border-indigo-500 font-medium"
+                  className="w-full px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-850 bg-white dark:bg-slate-955 text-slate-955 dark:text-white outline-none focus:border-indigo-500 font-medium"
                 />
               </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-semibold">
               <div>
-                <label className="block text-slate-500 uppercase tracking-wider mb-1.5 font-sans">CNPJ ou CPF do Locador</label>
+                <label className="block text-slate-500 uppercase tracking-wider mb-1.5 font-sans">
+                  {lessorConfigs.tipoPessoa === 'PF' ? 'CPF do Locador *' : 'CNPJ do Locador *'}
+                </label>
                 <input
                   type="text"
                   required
-                  placeholder="00.000.000/0001-00"
+                  placeholder={lessorConfigs.tipoPessoa === 'PF' ? "000.000.000-00" : "00.000.000/0001-00"}
                   value={lessorConfigs.cnpjCpf}
                   onChange={(e) => setLessorConfigs({ ...lessorConfigs, cnpjCpf: e.target.value })}
                   className="w-full px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-955 dark:text-white font-mono outline-none focus:border-indigo-500"
@@ -1052,12 +1099,20 @@ export default function NotificationsView() {
               </div>
 
               <div>
-                <label className="block text-slate-500 uppercase tracking-wider mb-1.5 font-sans">Inscrição Estadual (Opcional)</label>
+                <label className="block text-slate-500 uppercase tracking-wider mb-1.5 font-sans">
+                  {lessorConfigs.tipoPessoa === 'PF' ? 'RG do Locador (Opcional)' : 'Inscrição Estadual (Opcional)'}
+                </label>
                 <input
                   type="text"
-                  placeholder="Isento ou nº estadual"
-                  value={lessorConfigs.inscricaoEstadual || ''}
-                  onChange={(e) => setLessorConfigs({ ...lessorConfigs, inscricaoEstadual: e.target.value })}
+                  placeholder={lessorConfigs.tipoPessoa === 'PF' ? "00.000.000-0" : "Isento ou nº estadual"}
+                  value={lessorConfigs.tipoPessoa === 'PF' ? (lessorConfigs.rg || '') : (lessorConfigs.inscricaoEstadual || '')}
+                  onChange={(e) => {
+                    if (lessorConfigs.tipoPessoa === 'PF') {
+                      setLessorConfigs({ ...lessorConfigs, rg: e.target.value });
+                    } else {
+                      setLessorConfigs({ ...lessorConfigs, inscricaoEstadual: e.target.value });
+                    }
+                  }}
                   className="w-full px-3 py-2.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950 text-slate-955 dark:text-white font-mono outline-none focus:border-indigo-500"
                 />
               </div>
@@ -1172,18 +1227,26 @@ export default function NotificationsView() {
 
                 <div className="space-y-3 font-sans text-[11px] leading-relaxed">
                   <div>
-                    <span className="text-slate-400 text-[9px] uppercase font-bold block">Razão Social</span>
-                    <span className="font-semibold text-slate-200">{lessorConfigs.razaoSocial || " EVENTSPACE ERP LTDA"}</span>
+                    <span className="text-slate-400 text-[9px] uppercase font-bold block">
+                      {lessorConfigs.tipoPessoa === 'PF' ? 'Proprietário / Locador' : 'Razão Social'}
+                    </span>
+                    <span className="font-semibold text-slate-200">{lessorConfigs.razaoSocial || "Clécio Ferreira dos Santos"}</span>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2">
                     <div>
-                      <span className="text-slate-400 text-[9px] uppercase font-bold block">CNPJ / CPF</span>
-                      <span className="font-mono text-xs text-slate-200 font-semibold">{lessorConfigs.cnpjCpf || "12.345.678/0001-99"}</span>
+                      <span className="text-slate-400 text-[9px] uppercase font-bold block">
+                        {lessorConfigs.tipoPessoa === 'PF' ? 'CPF do Locador' : 'CNPJ / CPF'}
+                      </span>
+                      <span className="font-mono text-xs text-slate-200 font-semibold">{lessorConfigs.cnpjCpf || "123.456.789-00"}</span>
                     </div>
                     <div>
-                      <span className="text-slate-400 text-[9px] uppercase font-bold block">Insc. Estadual</span>
-                      <span className="font-mono text-xs text-slate-200 font-semibold">{lessorConfigs.inscricaoEstadual || "Isento"}</span>
+                      <span className="text-slate-400 text-[9px] uppercase font-bold block">
+                        {lessorConfigs.tipoPessoa === 'PF' ? 'RG do Locador' : 'Insc. Estadual'}
+                      </span>
+                      <span className="font-mono text-xs text-slate-200 font-semibold">
+                        {lessorConfigs.tipoPessoa === 'PF' ? (lessorConfigs.rg || "Não Informado") : (lessorConfigs.inscricaoEstadual || "Isento")}
+                      </span>
                     </div>
                   </div>
 
@@ -1204,12 +1267,14 @@ export default function NotificationsView() {
                   </div>
 
                   <div className="pt-2 border-t border-slate-800">
-                    <span className="text-slate-400 text-[9px] uppercase font-bold block">Assinatura Digital</span>
+                    <span className="text-slate-400 text-[9px] uppercase font-bold block">Assinatura no Contrato</span>
                     <span className="font-semibold text-slate-100 flex items-center gap-1">
                       <User className="w-3.5 h-3.5 text-indigo-400" />
-                      {lessorConfigs.representanteNome || "Representante Autorizado"}
+                      {lessorConfigs.tipoPessoa === 'PF' ? lessorConfigs.razaoSocial : (lessorConfigs.representanteNome || "Representante Autorizado")}
                     </span>
-                    <span className="text-[9px] text-slate-500 font-mono">CPF: {lessorConfigs.representanteCpf}</span>
+                    <span className="text-[9px] text-slate-500 font-mono">
+                      CPF: {lessorConfigs.tipoPessoa === 'PF' ? lessorConfigs.cnpjCpf : (lessorConfigs.representanteCpf || "")}
+                    </span>
                   </div>
                 </div>
               </div>
