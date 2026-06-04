@@ -93,6 +93,7 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
   const [formValorTotal, setFormValorTotal] = useState(0);
   const [formValorSinal, setFormValorSinal] = useState(0);
   const [formStatus, setFormStatus] = useState<StatusReserva>('Aguardando sinal');
+  const [formMotivoBloqueio, setFormMotivoBloqueio] = useState<'Manutenção' | 'Reforma' | 'Uso Pessoal' | 'Férias' | ''>('');
   const [formObservacoes, setFormObservacoes] = useState('');
 
   // Auto update valorLocacao in reservation form when space or event type is selected
@@ -412,6 +413,7 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
       setFormHorario('08:00 - 18:00');
       setFormQtdConvidados(80);
       setFormStatus('Orçamento');
+      setFormMotivoBloqueio('');
       setFormObservacoes('');
 
       setRegisterNewClientOnFly(false);
@@ -437,6 +439,7 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
     setFormValorTotal(b.valorTotal);
     setFormValorSinal(b.valorSinal);
     setFormStatus(b.status);
+    setFormMotivoBloqueio(b.motivoBloqueio || '');
     setFormObservacoes(b.observacoes || '');
 
     setRegisterNewClientOnFly(false);
@@ -561,14 +564,15 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
           await saveReserva({
             clienteId: 'sistema_bloqueado',
             espacoId: s.id,
-            tipoEvento: formTipoEvento || 'Bloqueio Administrativo',
+            tipoEvento: formTipoEvento && formTipoEvento !== 'Casamento' ? formTipoEvento : (formMotivoBloqueio ? `Bloqueio: ${formMotivoBloqueio}` : 'Bloqueio Administrativo'),
             dataEvento: selectedDayISO,
             horario: formHorario,
             qtdConvidados: 0,
             valorTotal: 0,
             valorSinal: 0,
             status: 'Bloqueado',
-            observacoes: formObservacoes || 'Bloqueio geral do salão/espaço'
+            motivoBloqueio: formMotivoBloqueio || undefined,
+            observacoes: formObservacoes || `Bloqueio geral da pauta para todos os espaços (${formMotivoBloqueio || 'Administrativo'})`
           });
         }
         await addActivityLog(
@@ -597,17 +601,20 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
       }
     }
 
-    const payload: Omit<Reserva, 'id' | 'createdAt'> & { id?: string } = {
+    const payload: Omit<Reserva, 'id' | 'createdAt'> & { id?: string; motivoBloqueio?: 'Manutenção' | 'Reforma' | 'Uso Pessoal' | 'Férias' } = {
       clienteId: targetClientId,
       espacoId: formSpaceId,
-      tipoEvento: isBlocking ? (formTipoEvento || 'Bloqueio Administrativo') : formTipoEvento,
+      tipoEvento: isBlocking 
+        ? (formTipoEvento && formTipoEvento !== 'Casamento' ? formTipoEvento : (formMotivoBloqueio ? `Bloqueio: ${formMotivoBloqueio}` : 'Bloqueio Administrativo')) 
+        : formTipoEvento,
       dataEvento: selectedDayISO,
       horario: formHorario,
       qtdConvidados: isBlocking ? 0 : Number(formQtdConvidados),
       valorTotal: isBlocking ? 0 : Number(formValorTotal),
       valorSinal: isBlocking ? 0 : Number(formValorSinal),
       status: formStatus,
-      observacoes: formObservacoes
+      observacoes: formObservacoes,
+      motivoBloqueio: isBlocking ? (formMotivoBloqueio || undefined) : undefined
     };
 
     if (editingBooking) {
@@ -668,7 +675,22 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
     }
   };
 
-  const getStatusColor = (bStatus: StatusReserva) => {
+  const getStatusColor = (bStatus: StatusReserva, booking?: Reserva) => {
+    if (bStatus === 'Bloqueado') {
+      const reason = booking?.motivoBloqueio;
+      switch(reason) {
+        case 'Manutenção':
+          return 'bg-amber-600 dark:bg-amber-700 text-white font-extrabold border border-amber-500/30';
+        case 'Reforma':
+          return 'bg-orange-600 dark:bg-orange-700 text-white font-extrabold border border-orange-500/30';
+        case 'Uso Pessoal':
+          return 'bg-purple-600 dark:bg-purple-700 text-white font-extrabold border border-purple-500/30';
+        case 'Férias':
+          return 'bg-teal-600 dark:bg-teal-700 text-white font-extrabold border border-teal-500/30';
+        default:
+          return 'bg-red-650 dark:bg-rose-900/90 text-white font-extrabold border border-red-700/45';
+      }
+    }
     switch(bStatus) {
       case 'Confirmado':
         return 'bg-violet-500 text-white shadow-sm border border-violet-600/30';
@@ -680,12 +702,10 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
         return 'bg-cyan-500 text-white';
       case 'Cancelado':
         return 'bg-slate-400 text-white line-through opacity-60';
-      case 'Bloqueado':
-        return 'bg-red-650 dark:bg-rose-900/90 text-white font-extrabold border border-red-700/45';
     }
   };
 
-  const getStatusTooltip = (bStatus: StatusReserva) => {
+  const getStatusTooltip = (bStatus: StatusReserva, booking?: Reserva) => {
     switch (bStatus) {
       case 'Orçamento':
         return 'Orçamento: Evento pré-agendado providoriamente. O horário não está garantido de forma definitiva até o sinal.';
@@ -698,7 +718,13 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
       case 'Cancelado':
         return 'Cancelado: Reserva cancelada e data correspondente liberada no calendário para novos agendamentos.';
       case 'Bloqueado':
-        return 'Bloqueado Administrativo: Data/espaço bloqueado pelo administrador. Nenhuma reserva pública é permitida nesta data.';
+        {
+          const reason = booking?.motivoBloqueio;
+          if (reason) {
+            return `Bloqueado Administrativo (${reason}): Este espaço ou pauta está bloqueado por motivo de ${reason}.`;
+          }
+          return 'Bloqueado Administrativo: Data/espaço bloqueado pelo administrador. Nenhuma reserva pública é permitida nesta data.';
+        }
       default:
         return '';
     }
@@ -795,12 +821,24 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
                 const dayIso = day.toISOString().split('T')[0];
                 const dayBookings = getDayBookings(dayIso);
                 const hasBooking = dayBookings.length > 0;
-                const isBlocked = dayBookings.some(b => b.status === 'Bloqueado');
+                const blockedBooking = dayBookings.find(b => b.status === 'Bloqueado');
+                const isBlocked = !!blockedBooking;
                 const isPast = isPastDate(day);
                 
                 let cellClass = "";
                 if (isBlocked) {
-                  cellClass = 'h-24 p-2.5 rounded-xl border flex flex-col justify-between cursor-pointer border-red-300 dark:border-rose-950 bg-rose-50/30 dark:bg-rose-950/20 hover:bg-rose-100/40 dark:hover:bg-rose-950/30 transition-all duration-200 transform hover:-translate-y-0.5 shadow-sm hover:shadow animate-fade-in';
+                  const reason = blockedBooking?.motivoBloqueio;
+                  if (reason === 'Manutenção') {
+                    cellClass = 'h-24 p-2.5 rounded-xl border flex flex-col justify-between cursor-pointer border-amber-305 dark:border-amber-900 bg-amber-500/5 dark:bg-amber-955/10 hover:bg-amber-500/15 dark:hover:bg-amber-955/20 transition-all duration-200 transform hover:-translate-y-0.5 shadow-sm hover:shadow animate-fade-in';
+                  } else if (reason === 'Reforma') {
+                    cellClass = 'h-24 p-2.5 rounded-xl border flex flex-col justify-between cursor-pointer border-orange-300 dark:border-orange-900 bg-orange-500/5 dark:bg-orange-955/10 hover:bg-orange-500/15 dark:hover:bg-orange-955/20 transition-all duration-200 transform hover:-translate-y-0.5 shadow-sm hover:shadow animate-fade-in';
+                  } else if (reason === 'Uso Pessoal') {
+                    cellClass = 'h-24 p-2.5 rounded-xl border flex flex-col justify-between cursor-pointer border-purple-300 dark:border-purple-900 bg-purple-500/5 dark:bg-purple-955/10 hover:bg-purple-500/15 dark:hover:bg-purple-955/20 transition-all duration-200 transform hover:-translate-y-0.5 shadow-sm hover:shadow animate-fade-in';
+                  } else if (reason === 'Férias') {
+                    cellClass = 'h-24 p-2.5 rounded-xl border flex flex-col justify-between cursor-pointer border-teal-350 dark:border-teal-900 bg-teal-500/5 dark:bg-teal-955/10 hover:bg-teal-500/15 dark:hover:bg-teal-955/20 transition-all duration-200 transform hover:-translate-y-0.5 shadow-sm hover:shadow animate-fade-in';
+                  } else {
+                    cellClass = 'h-24 p-2.5 rounded-xl border flex flex-col justify-between cursor-pointer border-red-300 dark:border-rose-950 bg-rose-50/30 dark:bg-rose-950/20 hover:bg-rose-100/40 dark:hover:bg-rose-955/30 transition-all duration-200 transform hover:-translate-y-0.5 shadow-sm hover:shadow animate-fade-in';
+                  }
                 } else if (hasBooking) {
                   cellClass = isPast
                     ? 'h-24 p-2.5 rounded-xl border flex flex-col justify-between cursor-pointer border-indigo-150/40 dark:border-indigo-950/60 bg-indigo-50/15 dark:bg-indigo-950/5 opacity-80 hover:opacity-100 shadow-sm transition-all duration-200 animate-fade-in'
@@ -810,7 +848,7 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
                 } else {
                   cellClass = 'h-24 p-2.5 rounded-xl border flex flex-col justify-between cursor-pointer transition-all duration-200 transform hover:-translate-y-0.5 border-emerald-150 dark:border-emerald-900/30 bg-emerald-50/20 dark:bg-emerald-950/5 hover:border-emerald-400 dark:hover:border-emerald-600 hover:bg-emerald-50 dark:hover:bg-emerald-950/15 shadow-sm hover:shadow animate-fade-in';
                 }
-
+                
                 return (
                   <div
                     key={`day-${day.getDate()}`}
@@ -824,7 +862,13 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
                         {day.getDate()}
                       </span>
                       {isBlocked ? (
-                        <Lock className="w-3 h-3 text-red-500 fill-red-500/10" />
+                        <Lock className={`w-3 h-3 ${
+                          blockedBooking?.motivoBloqueio === 'Manutenção' ? 'text-amber-500 fill-amber-500/10 animate-pulse' :
+                          blockedBooking?.motivoBloqueio === 'Reforma' ? 'text-orange-500 fill-orange-500/10' :
+                          blockedBooking?.motivoBloqueio === 'Uso Pessoal' ? 'text-purple-500 fill-purple-500/10' :
+                          blockedBooking?.motivoBloqueio === 'Férias' ? 'text-teal-500 fill-teal-500/10' :
+                          'text-red-500 fill-red-500/10'
+                        }`} />
                       ) : hasBooking ? (
                         <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse"></span>
                       ) : null}
@@ -836,8 +880,8 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
                         {dayBookings.map((b) => (
                           <div
                             key={b.id}
-                            className={`text-[8.5px] font-black px-1.5 py-0.5 rounded-md leading-tight truncate shadow-sm cursor-help hover:scale-102 transition-transform ${getStatusColor(b.status)}`}
-                            title={`${b.tipoEvento} (${b.status}): ${getStatusTooltip(b.status)}`}
+                            className={`text-[8.5px] font-black px-1.5 py-0.5 rounded-md leading-tight truncate shadow-sm cursor-help hover:scale-102 transition-transform ${getStatusColor(b.status, b)}`}
+                            title={`${b.tipoEvento} (${b.status}): ${getStatusTooltip(b.status, b)}`}
                           >
                             {b.tipoEvento}
                           </div>
@@ -883,8 +927,8 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
                           <div className="flex justify-between items-center mb-1">
                             <span className="font-bold text-gray-900 dark:text-white truncate">{b.tipoEvento}</span>
                             <span 
-                              className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase cursor-help hover:opacity-90 transition-opacity ${getStatusColor(b.status)}`}
-                              title={getStatusTooltip(b.status)}
+                              className={`px-1.5 py-0.5 rounded text-[8px] font-bold uppercase cursor-help hover:opacity-90 transition-opacity ${getStatusColor(b.status, b)}`}
+                              title={getStatusTooltip(b.status, b)}
                             >
                               {b.status}
                             </span>
@@ -916,9 +960,31 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
                 <span className="w-2.5 h-2.5 rounded-full bg-cyan-500 block"></span>
                 <span>Orçamento (Pré-reserva)</span>
               </div>
-              <div className="flex items-center gap-2 cursor-help" title={getStatusTooltip('Bloqueado')}>
-                <span className="w-2.5 h-2.5 rounded-full bg-red-650 dark:bg-rose-900 block border border-red-700/30"></span>
-                <span className="font-semibold text-rose-600 dark:text-rose-400 flex items-center gap-1">🚫 Bloqueio Administrativo</span>
+              
+              <div className="pt-2 border-t border-dashed border-gray-150 dark:border-slate-800 space-y-1.5">
+                <span className="text-[9px] uppercase tracking-wider text-gray-500 dark:text-zinc-500 block font-bold">🚫 Legenda de Bloqueios</span>
+                <div className="flex flex-col gap-1.5 pl-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-amber-600 block"></span>
+                    <span>Manutenção</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-orange-600 block"></span>
+                    <span>Reforma</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-purple-600 block"></span>
+                    <span>Uso Pessoal</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-teal-600 block"></span>
+                    <span>Férias</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-red-650 block"></span>
+                    <span>Outros Bloqueios</span>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -933,8 +999,8 @@ export default function AgendaView({ onNavigateToView }: AgendaViewProps) {
             <div className="flex justify-between items-start pb-3 border-b border-gray-100 dark:border-slate-800">
               <div>
                 <span 
-                  className={`px-2.5 py-0.5 rounded-lg text-[9px] font-bold uppercase tracking-wider cursor-help hover:opacity-90 transition-opacity ${getStatusColor(selectedBookingForInspect.status)}`}
-                  title={getStatusTooltip(selectedBookingForInspect.status)}
+                  className={`px-2.5 py-0.5 rounded-lg text-[9px] font-bold uppercase tracking-wider cursor-help hover:opacity-90 transition-opacity ${getStatusColor(selectedBookingForInspect.status, selectedBookingForInspect)}`}
+                  title={getStatusTooltip(selectedBookingForInspect.status, selectedBookingForInspect)}
                 >
                   {selectedBookingForInspect.status}
                 </span>

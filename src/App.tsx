@@ -22,10 +22,12 @@ import SettingsView from './components/SettingsView';
 import PublicBookingView from './components/PublicBookingView';
 import UsersView from './components/UsersView';
 import { getCurrentUser, logout } from './services/firebase';
+import EditProfileModal from './components/EditProfileModal';
 
 export default function App() {
   const [user, setUser] = useState<any>(null);
   const [checkingAuth, setCheckingAuth] = useState(true);
+  const [isProfileEditOpen, setIsProfileEditOpen] = useState(false);
   
   // Navigation
   const [currentView, setCurrentView] = useState('dashboard');
@@ -229,7 +231,16 @@ export default function App() {
         onLogout={handleLogout}
         isOpen={isSidebarOpen}
         onClose={() => setIsSidebarOpen(false)}
+        onEditProfile={() => setIsProfileEditOpen(true)}
       />
+
+      {isProfileEditOpen && (
+        <EditProfileModal 
+          currentUser={user}
+          onClose={() => setIsProfileEditOpen(false)}
+          onProfileUpdated={(updatedUser) => setUser(updatedUser)}
+        />
+      )}
 
       {/* Main viewport area */}
       <div className="flex-1 flex flex-col min-w-0">

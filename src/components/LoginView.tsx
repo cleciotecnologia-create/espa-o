@@ -23,7 +23,7 @@ interface LoginViewProps {
 }
 
 export default function LoginView({ onLoginSuccess }: LoginViewProps) {
-  const [email, setEmail] = useState('admin@eventspace.com.br');
+  const [email, setEmail] = useState('clecioferreiracorretor@gmail.com');
   const [password, setPassword] = useState('123456');
   const [loading, setLoading] = useState(false);
   const [formMode, setFormMode] = useState<'login' | 'forgot'>('login');
@@ -46,7 +46,7 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       onLoginSuccess(user);
     } catch (err: any) {
       console.error(err);
-      setErrorMsg("Credenciais inválidas ou serviço temporariamente indisponível. Utilize as senhas de demonstração.");
+      setErrorMsg("Credenciais inválidas ou e-mail não disponível no banco de dados.");
     } finally {
       setLoading(false);
     }
@@ -59,20 +59,9 @@ export default function LoginView({ onLoginSuccess }: LoginViewProps) {
       setLoading(true);
       const user = await loginWithGoogle();
       onLoginSuccess(user);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setErrorMsg("Erro na autenticação através do Google Popup. Carregando simulação...");
-      
-      // Load fallback mock user session so dev doesn't block
-      setTimeout(() => {
-        onLoginSuccess({
-          uid: 'google_mock_user_11',
-          email: 'corporativo@eventspace-erp.com',
-          displayName: 'Clécio Santos (Simulado)',
-          photoURL: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=80&h=80&fit=crop',
-          isAnonymous: false
-        });
-      }, 1000);
+      setErrorMsg(err?.message || "Erro na autenticação através do Google Popup.");
     } finally {
       setLoading(false);
     }

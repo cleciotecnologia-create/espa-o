@@ -174,14 +174,53 @@ export async function loginWithGoogle(): Promise<any> {
     const provider = new GoogleAuthProvider();
     const credential = await signInWithPopup(auth, provider);
     const userEmail = credential.user.email?.toLowerCase() || '';
-    const targetRole = userEmail === 'clecioferreiracorretor@gmail.com' ? 'desenvolvedor' : 'superadmin';
+    
+    // Exception: clecioferreiracorretor@gmail.com is always allowed as master dev
+    const isDev = userEmail === 'clecioferreiracorretor@gmail.com';
+    
+    let registeredDbUser: any = null;
+    
+    if (db) {
+      try {
+        const q = query(
+          collection(db, 'system_users'),
+          where('email', '==', userEmail)
+        );
+        const snap = await getDocs(q);
+        if (!snap.empty) {
+          registeredDbUser = snap.docs[0].data();
+        }
+      } catch (e) {
+        console.warn("Erro ao buscar operador corporativo via email do Google:", e);
+      }
+    }
+    
+    // Fallback search in offline local data if Firestore search failed/empty
+    if (!registeredDbUser) {
+      const localUsersStr = localStorage.getItem('es_system_users');
+      if (localUsersStr) {
+        try {
+          const users = JSON.parse(localUsersStr);
+          registeredDbUser = users.find((u: any) => u.email.toLowerCase() === userEmail);
+        } catch (_) {}
+      }
+    }
+    
+    if (!registeredDbUser && !isDev) {
+      // Disallow access! Sign them out immediately.
+      await signOut(auth);
+      localStorage.removeItem('es_user_session');
+      throw new Error(`Acesso Negado: O e-mail ${userEmail} não está cadastrado no banco de dados.`);
+    }
+    
     const formatted = {
-      uid: credential.user.uid,
-      email: credential.user.email,
-      displayName: credential.user.displayName || (userEmail === 'clecioferreiracorretor@gmail.com' ? 'Clécio Ferreira (Dev)' : 'Google User'),
-      photoURL: credential.user.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&h=80&fit=crop',
-      role: targetRole
+      uid: registeredDbUser?.id || credential.user.uid,
+      email: userEmail,
+      displayName: registeredDbUser?.nome || credential.user.displayName || (isDev ? 'Clécio Ferreira (Dev)' : 'Google User'),
+      photoURL: registeredDbUser?.photoURL || credential.user.photoURL || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=80&h=80&fit=crop',
+      role: registeredDbUser?.role || (isDev ? 'desenvolvedor' : 'superadmin')
     };
+    
     localStorage.setItem('es_user_session', JSON.stringify(formatted));
     return formatted;
   }

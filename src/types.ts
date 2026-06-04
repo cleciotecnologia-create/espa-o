@@ -48,6 +48,7 @@ export interface Reserva {
   observacoes?: string;
   createdAt: string;
   taxaLimpeza?: number;
+  motivoBloqueio?: 'Manutenção' | 'Reforma' | 'Uso Pessoal' | 'Férias';
 }
 
 export interface Pagamento {

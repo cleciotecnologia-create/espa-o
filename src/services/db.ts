@@ -357,14 +357,8 @@ if (typeof window !== 'undefined') {
               }
             }
             
-            // Clean up other users in the Firestore "system_users" collection to make sure we "apagar todos os usuarios" other than clecioferreiracorretor@gmail.com
-            for (const docSnap of usersSnap.docs) {
-              const data = docSnap.data();
-              if (data.email && data.email.toLowerCase() !== 'clecioferreiracorretor@gmail.com') {
-                console.log(`De-seeding non-dev user from Firestore: ${data.email}`);
-                await deleteDoc(doc(db, 'system_users', docSnap.id));
-              }
-            }
+            // We don't clean up or delete other system users so that users registered in the collection persist correctly.
+            console.log("system_users verification completed.");
           }
 
           const spacesSnap = await getDocs(collection(db, 'espacos'));

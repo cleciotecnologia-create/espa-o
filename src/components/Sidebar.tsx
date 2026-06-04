@@ -34,6 +34,7 @@ interface SidebarProps {
   currentUser: any;
   isOpen: boolean;
   onClose: () => void;
+  onEditProfile: () => void;
 }
 
 export default function Sidebar({ 
@@ -44,7 +45,8 @@ export default function Sidebar({
   onLogout,
   currentUser,
   isOpen,
-  onClose
+  onClose,
+  onEditProfile
 }: SidebarProps) {
   const [brandLogo, setBrandLogo] = useState(() => typeof window !== 'undefined' ? (localStorage.getItem('cfg_brand_logo') || '') : '');
 
@@ -148,22 +150,26 @@ export default function Sidebar({
 
         {/* User Session & System Controls */}
         <div className="p-4 border-t border-slate-100 dark:border-slate-900 space-y-3 bg-slate-50/50 dark:bg-slate-950/60">
-          <div className="flex items-center gap-3 px-2">
+          <div 
+            onClick={onEditProfile}
+            className="flex items-center gap-3 px-2 py-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-900 cursor-pointer group transition-colors duration-150"
+            title="Editar meu perfil"
+          >
             {currentUser?.photoURL ? (
               <img 
                 src={currentUser.photoURL} 
                 alt="Foto de Perfil" 
-                className="w-9 h-9 rounded-full object-cover border border-slate-200 dark:border-slate-800 flex-shrink-0"
+                className="w-9 h-9 rounded-full object-cover border border-slate-200 dark:border-slate-800 flex-shrink-0 group-hover:scale-105 transition-transform duration-150"
                 referrerPolicy="no-referrer"
               />
             ) : (
-              <div className="w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-900 flex items-center justify-center font-extrabold text-sm text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-800 flex-shrink-0">
+              <div className="w-9 h-9 rounded-full bg-slate-100 dark:bg-slate-900 flex items-center justify-center font-extrabold text-sm text-indigo-600 dark:text-indigo-400 border border-slate-200 dark:border-slate-800 flex-shrink-0 group-hover:scale-105 transition-transform duration-150">
                 {currentUser?.email ? currentUser.email[0].toUpperCase() : 'C'}
               </div>
             )}
             <div className="overflow-hidden">
-              <p className="text-xs font-bold text-slate-900 dark:text-zinc-100 truncate">{currentUser?.displayName || 'Clécio Santos'}</p>
-              <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate">{currentUser?.email || 'admin@eventspace.com'}</p>
+              <p className="text-xs font-bold text-slate-900 dark:text-zinc-100 truncate group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors leading-tight">{currentUser?.displayName || 'Clécio Santos'}</p>
+              <p className="text-[10px] text-slate-500 dark:text-slate-400 truncate leading-none mt-1">{currentUser?.email || 'admin@eventspace.com'}</p>
             </div>
           </div>
 
